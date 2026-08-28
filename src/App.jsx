@@ -30,7 +30,7 @@ function getFilingTypes(jurisdiction) {
   const j = jurisdiction.toLowerCase();
   if (isUSJurisdiction(jurisdiction)) return ["Tax Return"];
   if (j.includes("bvi") || j.includes("british virgin")) return ["Economic Substance", "Annual Return"];
-  return ["Economic Substance"];
+  return ["Economic Substance"]; 
 }
 
 const DEFAULT_STEPS = {
