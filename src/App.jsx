@@ -30,7 +30,7 @@ function getFilingTypes(jurisdiction) {
   const j = jurisdiction.toLowerCase();
   if (isUSJurisdiction(jurisdiction)) return ["Tax Return"];
   if (j.includes("bvi") || j.includes("british virgin")) return ["Economic Substance", "Annual Return"];
-  return ["Economic Substance"]; 
+  return ["Economic Substance"];
 }
 
 const DEFAULT_STEPS = {
@@ -276,8 +276,9 @@ function Modal({ title, onClose, children, width=640 }) {
 // ─── Email Modal ──────────────────────────────────────────────────────────────
 function EmailModal({ filing, company, onClose }) {
   const tmpl = EMAIL_TEMPLATES[filing.filingType] || {};
+  const taxYr = String((filing.year||CURRENT_YEAR) - 1);
   const vars = { companyName:company.name||"", jurisdiction:company.jurisdiction||"",
-    registrationNumber:company.registrationNumber||"", year:String(filing.year||CURRENT_YEAR) };
+    registrationNumber:company.registrationNumber||"", year:taxYr };
   const [to,      setTo]      = useState(company.clientEmail||"");
   const [subject, setSubject] = useState(fill(tmpl.subject, vars));
   const [body,    setBody]    = useState(fill(tmpl.body, vars));
@@ -469,7 +470,7 @@ function FilingCard({ filing, company, users, isAdmin, currentUserEmail, onUpdat
             {filingStatus!=="Complete" && <DaysBadge days={days}/>}
           </div>
           <div style={{ fontSize:11, color:C.text3 }}>
-            Due: {fmtDate(filing.dueDate)} &middot; {done}/{steps.length} steps
+            Due: {fmtDate(filing.dueDate)} &middot; Tax Year {String(parseInt(filing.year) - 1)} &middot; {done}/{steps.length} steps
           </div>
           <div style={{ marginTop:5, height:3, background:C.border, borderRadius:2 }}>
             <div style={{ width:pct+"%", height:"100%", borderRadius:2,
@@ -644,7 +645,7 @@ function SidePanel({ company, filings, users, isAdmin, currentUserEmail, yearFil
   const realFilings = cos.filter(f=>f.filingType!=="__notes__");
 
   return (
-    <div style={{ position:"fixed", top:54, right:0, bottom:0, width:"55%", maxWidth:820,
+    <div style={{ width:"58%", maxWidth:820,
       background:C.card, borderLeft:"1px solid "+C.border, display:"flex", flexDirection:"column",
       zIndex:100, overflowY:"auto", boxShadow:"-8px 0 32px rgba(0,0,0,0.4)" }}>
       {/* Header */}
@@ -670,7 +671,7 @@ function SidePanel({ company, filings, users, isAdmin, currentUserEmail, yearFil
         <div style={{ marginBottom:24 }}>
           <div style={{ fontSize:11, fontWeight:900, color:C.text3,
             textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>
-            Notes — {yearFilter}
+            Notes — Tax Year {String(parseInt(yearFilter) - 1)}
           </div>
           <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3}
             placeholder={"Add notes for "+company.name+" ("+yearFilter+")..."}
@@ -689,7 +690,7 @@ function SidePanel({ company, filings, users, isAdmin, currentUserEmail, yearFil
         {/* Filings */}
         <div style={{ fontSize:11, fontWeight:900, color:C.text3,
           textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:12 }}>
-          Filings — {yearFilter}
+          Filings — Tax Year {String(parseInt(yearFilter) - 1)}
         </div>
         {realFilings.length===0 ? (
           <div style={{ textAlign:"center", padding:32, color:C.text3, fontSize:13 }}>
@@ -733,6 +734,7 @@ export default function App() {
     ADMIN_EMAILS.includes((currentUser.email||"").toLowerCase()) ||
     currentUser.role==="admin" || currentUser.role==="editor"
   );
+  const taxYear = String(parseInt(yearFilter) - 1);
 
   const showToast = (msg, type="success") => {
     setToast({msg,type}); setTimeout(()=>setToast(null),3500);
@@ -846,13 +848,21 @@ export default function App() {
         <div style={{ flex:1 }}/>
 
         {/* Year selector */}
-        <select value={yearFilter} onChange={e=>{setYearFilter(e.target.value);setSelectedCo(null);}}
-          style={{ background:"#111", color:C.text, border:"1px solid "+C.border2,
-            borderRadius:7, padding:"4px 10px", fontSize:12, fontWeight:700, outline:"none" }}>
-          {[CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1,CURRENT_YEAR-2].map(y=>(
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ fontSize:11, color:C.text3 }}>Work Year</span>
+          <select value={yearFilter} onChange={e=>{setYearFilter(e.target.value);setSelectedCo(null);}}
+            style={{ background:"#111", color:C.text, border:"1px solid "+C.border2,
+              borderRadius:7, padding:"4px 10px", fontSize:12, fontWeight:700, outline:"none",
+              colorScheme:"dark" }}>
+            {[CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1,CURRENT_YEAR-2].map(y=>(
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          <span style={{ fontSize:11, color:C.text3, background:C.card2,
+            border:"1px solid "+C.border, borderRadius:6, padding:"3px 9px", whiteSpace:"nowrap" }}>
+            Tax Year <span style={{ color:"#818cf8", fontWeight:800 }}>{taxYear}</span>
+          </span>
+        </div>
 
         {isAdmin && (
           <Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>
@@ -884,7 +894,7 @@ export default function App() {
       <div style={{ display:"flex", height:"calc(100vh - 104px)" }}>
 
         {/* Company list */}
-        <div style={{ flex:1, overflowY:"auto", transition:"all 0.3s" }}>
+        <div style={{ flex:1, overflowY:"auto", transition:"all 0.3s", minWidth:0 }}>
           {/* Filters */}
           <div style={{ padding:"12px 16px", borderBottom:"1px solid "+C.border,
             display:"flex", gap:8, flexWrap:"wrap", alignItems:"center",
@@ -916,7 +926,7 @@ export default function App() {
 
           {/* Column headers */}
           <div style={{ display:"grid",
-            gridTemplateColumns: panelOpen ? "2fr 1fr 1fr 100px" : "2fr 1fr 1fr 1fr 120px 100px",
+            gridTemplateColumns: panelOpen ? "1.8fr 0.8fr 0.9fr" : "2fr 1fr 1fr 1fr 120px 100px",
             padding:"7px 16px", background:"#111", borderBottom:"1px solid "+C.border,
             position:"sticky", top:53, zIndex:9 }}>
             {(panelOpen
@@ -1036,7 +1046,18 @@ export default function App() {
         </div>
       )}
 
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}`}</style>
+      <style>{`
+@keyframes spin{to{transform:rotate(360deg)}}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#111}
+::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+select{background:#242424 !important;color:#e2e8f0 !important;border-color:#2d2d2d !important;color-scheme:dark}
+select option{background:#242424 !important;color:#e2e8f0 !important}
+input{background:#242424 !important;color:#e2e8f0 !important;border-color:#2d2d2d !important}
+input::placeholder{color:#475569 !important}
+textarea{color-scheme:dark}
+`}</style>
     </div>
   );
 }
