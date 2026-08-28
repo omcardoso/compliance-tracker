@@ -12,11 +12,11 @@ export default async function handler(req) {
   const action = searchParams.get("action");
 
   const VALID = [
-    "getCompanies", "getUsers", "getFilings", "getSteps",
-    "sendComplianceEmail"
+    "getCompanies", "getUsers", "getFilings", "getSteps", "sendComplianceEmail"
   ];
+
   if (!action || !VALID.includes(action)) {
-    return new Response(JSON.stringify({ error: "Invalid action: " + action }), {
+    return new Response(JSON.stringify({ error: "Unknown action: " + action }), {
       status: 400, headers: { "Content-Type": "application/json" }
     });
   }
@@ -38,7 +38,8 @@ export default async function handler(req) {
     });
   } catch (e) {
     return new Response(JSON.stringify({ error: e.message }), {
-      status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      status: 500,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
     });
   }
 }
