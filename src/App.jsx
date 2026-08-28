@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { SignedIn, SignedOut, SignIn, useUser, UserButton } from "@clerk/clerk-react";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const SCRIPT_URL  = import.meta.env.VITE_SCRIPT_URL;
+const SCRIPT_URL   = import.meta.env.VITE_SCRIPT_URL;
 const CURRENT_YEAR = new Date().getFullYear();
 
-const ADMIN_EMAILS   = ["omcardoso@gmail.com", "cardoso@westchester.eu", "meloatwork@gmail.com"];
-const FERNANDO_EMAIL = "gataxservicescorp@gmail.com";
+const ADMIN_EMAILS = ["omcardoso@gmail.com", "cardoso@westchester.eu", "meloatwork@gmail.com"];
 
 const US_STATES = [
   "florida","delaware","texas","colorado","oklahoma","nevada","wyoming",
@@ -16,78 +15,58 @@ const US_STATES = [
   "michigan","indiana","tennessee","missouri","wisconsin","louisiana",
   "alabama","kentucky","arkansas","mississippi","kansas","iowa","nebraska",
   "idaho","new mexico","hawaii","alaska","rhode island","vermont",
-  "new hampshire","maine","montana","south dakota","north dakota","west virginia",
-  "usa","united states","u.s.","us ",
+  "new hampshire","maine","montana","south dakota","north dakota",
+  "west virginia","usa","united states","u.s.",
 ];
 
-function isUSJurisdiction(jurisdiction) {
-  if (!jurisdiction) return false;
-  const j = jurisdiction.toLowerCase();
-  return US_STATES.some(s => j.includes(s));
+function isUSJurisdiction(j) {
+  if (!j) return false;
+  const jl = j.toLowerCase();
+  return US_STATES.some(s => jl.includes(s));
 }
 
-// Filing types per jurisdiction
-const JURISDICTION_FILINGS = {
-  US:        ["Tax Return"],
-  OFFSHORE:  ["Economic Substance"],
-  BVI:       ["Economic Substance", "Annual Return"],
-};
-
-function getFilingTypesForJurisdiction(jurisdiction) {
+function getFilingTypes(jurisdiction) {
   if (!jurisdiction) return [];
-  const j = jurisdiction.trim().toLowerCase();
+  const j = jurisdiction.toLowerCase();
   if (isUSJurisdiction(jurisdiction)) return ["Tax Return"];
   if (j.includes("bvi") || j.includes("british virgin")) return ["Economic Substance", "Annual Return"];
-  // All other offshore jurisdictions get Economic Substance
   return ["Economic Substance"];
 }
 
-const FILING_DEADLINES = {
-  "Economic Substance": "June 30",
-  "Annual Return":      "September 30",
-  "Tax Return":         "October 15",
-};
-
-const TAX_RETURN_STEPS = [
-  "Send Information Request Letter",
-  "Bank Statements received",
-  "Mortgage statement received",
-  "Property Management Statement received",
-  "HUD received (if new purchase made)",
-  "Information on Financial Transactions with Shareholders",
-  "Property Tax Information received",
-  "Prepare Bookkeeping",
-  "Upload reports",
-  "Fernando prepared Tax Return",
-  "Sent Return to client for signature",
-  "Received signed return forms from client",
-  "Send signed returns to Fernando",
-  "Return Filed",
-];
-
-const ECON_SUBSTANCE_STEPS = [
-  "Send Google Form link to client",
-  "Client submitted form",
-  "Prepare Economic Substance filing",
-  "Filing submitted",
-];
-
-const ANNUAL_RETURN_STEPS = [
-  "Send balance sheet request to client",
-  "Balance sheet received from client",
-  "Prepare Annual Financial Report (AFR)",
-  "AFR submitted",
-];
-
 const DEFAULT_STEPS = {
-  "Economic Substance": ECON_SUBSTANCE_STEPS,
-  "Annual Return":      ANNUAL_RETURN_STEPS,
-  "Tax Return":         TAX_RETURN_STEPS,
+  "Economic Substance": [
+    "Send Google Form link to client",
+    "Client submitted form",
+    "Prepare Economic Substance filing",
+    "Filing submitted",
+  ],
+  "Annual Return": [
+    "Send balance sheet request to client",
+    "Balance sheet received from client",
+    "Prepare Annual Financial Report (AFR)",
+    "AFR submitted",
+  ],
+  "Tax Return": [
+    "Send Information Request Letter",
+    "Bank Statements received",
+    "Mortgage statement received",
+    "Property Management Statement received",
+    "HUD received (if new purchase made)",
+    "Information on Financial Transactions with Shareholders",
+    "Property Tax Information received",
+    "Prepare Bookkeeping",
+    "Upload reports",
+    "Fernando prepared Tax Return",
+    "Sent Return to client for signature",
+    "Received signed return forms from client",
+    "Send signed returns to Fernando",
+    "Return Filed",
+  ],
 };
 
 const EMAIL_TEMPLATES = {
   "Economic Substance": {
-    subject: "URGENTE - {{companyName}} - Informacao para declaracao Anual de Substancia economica - IMPORTANTE",
+    subject: "URGENTE - {{companyName}} - Informacao para declaracao Anual de Substancia economica",
     body: `IMPORTANTE O prazo para o envio das informacoes preenchidas e ate 30 de Junho para que possamos assegurar o cumprimento das exigencias regulatorias para evitar possiveis multas.
 
 Prezado(a) Cliente,
@@ -100,65 +79,68 @@ Empresa: {{companyName}}
 Pais de Incorporacao: {{jurisdiction}}
 Numero de Registro: {{registrationNumber}}
 
-Este questionario nos auxiliara na coleta das informacoes necessarias para garantir nossa conformidade com as diretrizes estabelecidas pelo governo local da sua empresa.
-
 Agradecemos sua cooperacao e comprometimento nessa importante etapa.
 
 Octavio Cardoso
-President
-Westchester International LLC`,
+President - Westchester International LLC`,
   },
   "Tax Return": {
     subject: "{{companyName}} Declaracao de Renda - Follow up",
-    body: `Prezado Cliente:
+    body: `Prezado Cliente,
 
 Se o senhor(a) esta recebendo esse email e porque nao recebemos ate esse momento as informacoes Completas para poder preparar a declaracao de renda da sua empresa para {{year}}.
 
-Conforme abaixo indicado, e fundamental recebermos o mais rapido possivel todas as informacoes necessarias para atendermos os prazos estabelecidos pela Receita Americana.
-
-Para declaracao de renda, solicitamos o envio das demonstracoes financeiras do ano de {{year}} atraves de uma planilha ou extratos bancarios demonstrando as movimentacoes realizadas, como por exemplo:
-- Aumento ou reducao de capital, distribuicao de dividendos
-- Emprestimos entre empresas
-- Compra de imoveis (receitas/recebimentos de aluguel/despesas)
-- Despesas gerais, impostos pagos
-
-OBSERVACAO MUITO IMPORTANTE: PRECISAMOS SER INFORMADOS SE HOUVE QUALQUER MOVIMENTACAO DE RECURSOS ENTRE A EMPRESA E SEUS ACIONISTAS NAO AMERICANOS.
+Para declaracao de renda, solicitamos o envio das demonstracoes financeiras do ano de {{year}} atraves de uma planilha ou extratos bancarios demonstrando as movimentacoes realizadas.
 
 E crucial recebermos todas as informacoes ate dia 30 de junho de {{year}}.
 
 Octavio Cardoso
-President
-Westchester International LLC`,
+President - Westchester International LLC`,
   },
   "Annual Return": {
     subject: "{{companyName}} Declaracao Anual - BVI",
     body: `Prezado cliente,
 
-Gostariamos de lembrá-lo sobre a obrigacao anual de apresentacao da Declaracao Financeira Anual (AFR) para todas as empresas com sede em British Virgin Islands (BVI).
-
-A declaracao consiste em um balanco contabil basico e uma demonstracao de lucros e perdas. Esse relatorio deve ser apresentado dentro do prazo de nove meses apos o encerramento do ano fiscal. O nao cumprimento sujeita a empresa a multas de ate US$ 5.000,00.
+Gostariamos de lembra-lo sobre a obrigacao anual de apresentacao da Declaracao Financeira Anual (AFR) para todas as empresas com sede em British Virgin Islands (BVI).
 
 Solicitamos o envio do balanco contabil da sua empresa referente ao ano fiscal de {{year}} o mais breve possivel.
 
-Permanecemos a disposicao para esclarecer qualquer duvida.
-
 Octavio Cardoso
-President
-Westchester International LLC`,
+President - Westchester International LLC`,
   },
 };
 
 const STEP_STATUSES   = ["Pending", "In Progress", "Waiting Client", "Done"];
 const FILING_STATUSES = ["Not Started", "In Progress", "Waiting Client", "Complete"];
+const ALL_FILING_TYPES = ["Tax Return", "Economic Substance", "Annual Return"];
 
-const STATUS_COLORS = {
-  "Not Started":    { bg:"#f1f5f9", color:"#475569" },
-  "In Progress":    { bg:"#dbeafe", color:"#1e40af" },
-  "Waiting Client": { bg:"#fef3c7", color:"#92400e" },
-  "Complete":       { bg:"#d1fae5", color:"#065f46" },
-  "Pending":        { bg:"#f1f5f9", color:"#475569" },
-  "Done":           { bg:"#d1fae5", color:"#065f46" },
-  "Overdue":        { bg:"#fee2e2", color:"#991b1b" },
+// ─── Dark Theme Colors ────────────────────────────────────────────────────────
+const C = {
+  bg:         "#0d0d0d",
+  card:       "#1a1a1a",
+  card2:      "#222222",
+  border:     "#2d2d2d",
+  border2:    "#383838",
+  text:       "#f1f5f9",
+  text2:      "#94a3b8",
+  text3:      "#475569",
+  accent:     "#6366f1",
+  accentHov:  "#4f46e5",
+  success:    "#10b981",
+  warning:    "#f59e0b",
+  danger:     "#ef4444",
+  inputBg:    "#242424",
+};
+
+const STATUS_STYLES = {
+  "Not Started":    { bg:"#1f2937", color:"#94a3b8" },
+  "In Progress":    { bg:"#1e3a5f", color:"#60a5fa" },
+  "Waiting Client": { bg:"#3d2b00", color:"#fbbf24" },
+  "Complete":       { bg:"#064e3b", color:"#34d399" },
+  "Pending":        { bg:"#1f2937", color:"#94a3b8" },
+  "Done":           { bg:"#064e3b", color:"#34d399" },
+  "Overdue":        { bg:"#450a0a", color:"#fca5a5" },
+  "No Filings":     { bg:"#1f2937", color:"#475569" },
 };
 
 // ─── API ─────────────────────────────────────────────────────────────────────
@@ -168,11 +150,9 @@ async function apiRead(action, params = {}) {
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.json();
 }
-
 async function apiWrite(body) {
   const res = await fetch(SCRIPT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain" },
+    method: "POST", headers: { "Content-Type": "text/plain" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("HTTP " + res.status);
@@ -181,40 +161,38 @@ async function apiWrite(body) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function isFernando(val) {
-  if (!val) return false;
-  return String(val).toLowerCase().includes("fernando");
+  return val && String(val).toLowerCase().includes("fernando");
 }
-
-function getDueDate(filingType, year) {
-  const map = {
-    "Economic Substance": year + "-06-30",
-    "Annual Return":      year + "-09-30",
-    "Tax Return":         year + "-10-15",
-  };
-  return map[filingType] || (year + "-12-31");
+function getDueDate(ft, year) {
+  const m = { "Economic Substance": year+"-06-30", "Annual Return": year+"-09-30", "Tax Return": year+"-10-15" };
+  return m[ft] || year+"-12-31";
 }
-
-function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const due = new Date(dateStr);
-  return Math.round((due - today) / (1000 * 60 * 60 * 24));
+function daysUntil(d) {
+  if (!d) return null;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((new Date(d) - t) / 86400000);
 }
-
-function formatDate(dateStr) {
-  if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+function fmtDate(d) {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
 }
-
-function fillTemplate(str, vars) {
-  return Object.entries(vars).reduce(
-    (s, [k, v]) => s.replaceAll("{{" + k + "}}", v || ""), str || ""
-  );
+function fill(str, vars) {
+  return Object.entries(vars).reduce((s,[k,v]) => s.replaceAll("{{"+k+"}}", v||""), str||"");
+}
+function getNextResponsible(companyName, filings, year, users) {
+  const cos = (filings[companyName]||[]).filter(f => String(f.year)===year && f.status!=="Complete");
+  for (const f of cos) {
+    const next = (f.steps||[]).find(s => s.status!=="Done" && s.assignedTo);
+    if (next) {
+      const u = users.find(u => u.email===next.assignedTo);
+      return { name: u ? u.name.split(" ")[0] : next.assignedTo.split("@")[0], step: next.stepName };
+    }
+  }
+  return null;
 }
 
 // ─── UI Components ───────────────────────────────────────────────────────────
-function Spinner({ size = 18, color = "#6366f1" }) {
+function Spinner({ size=18, color=C.accent }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
       style={{ animation:"spin 0.8s linear infinite", display:"inline-block", flexShrink:0 }}>
@@ -224,7 +202,7 @@ function Spinner({ size = 18, color = "#6366f1" }) {
 }
 
 function Badge({ status }) {
-  const s = STATUS_COLORS[status] || STATUS_COLORS["Not Started"];
+  const s = STATUS_STYLES[status] || STATUS_STYLES["Not Started"];
   return (
     <span style={{ background:s.bg, color:s.color, borderRadius:20,
       padding:"2px 10px", fontSize:11, fontWeight:800, whiteSpace:"nowrap" }}>
@@ -234,34 +212,60 @@ function Badge({ status }) {
 }
 
 function DaysBadge({ days }) {
-  if (days === null || days === undefined) return null;
+  if (days===null||days===undefined) return null;
   let bg, color, label;
-  if (days < 0)         { bg="#fee2e2"; color="#991b1b"; label=Math.abs(days)+"d overdue"; }
-  else if (days <= 14)  { bg="#fef3c7"; color="#92400e"; label=days+"d left"; }
-  else if (days <= 60)  { bg="#dbeafe"; color="#1e40af"; label=days+"d left"; }
-  else                  { bg="#d1fae5"; color="#065f46"; label=days+"d left"; }
+  if (days<0)        { bg="#450a0a"; color="#fca5a5"; label=Math.abs(days)+"d overdue"; }
+  else if (days<=14) { bg="#3d2b00"; color="#fbbf24"; label=days+"d left"; }
+  else if (days<=60) { bg="#1e3a5f"; color="#60a5fa"; label=days+"d left"; }
+  else               { bg="#064e3b"; color="#34d399"; label=days+"d left"; }
   return (
-    <span style={{ background:bg, color, borderRadius:20,
-      padding:"2px 9px", fontSize:10, fontWeight:800, whiteSpace:"nowrap" }}>
+    <span style={{ background:bg, color, borderRadius:20, padding:"2px 9px",
+      fontSize:10, fontWeight:800, whiteSpace:"nowrap" }}>
       {label}
     </span>
   );
 }
 
-function Modal({ title, onClose, children, width = 640 }) {
+function Btn({ onClick, disabled, children, variant="primary", size="md", style={} }) {
+  const base = { border:"none", borderRadius:7, cursor:disabled?"default":"pointer",
+    fontWeight:800, display:"inline-flex", alignItems:"center", gap:6,
+    fontFamily:"inherit", transition:"opacity 0.15s", opacity:disabled?0.5:1, ...style };
+  const variants = {
+    primary:   { background:C.accent,   color:"#fff", fontSize: size==="sm"?11:13, padding: size==="sm"?"4px 10px":"8px 18px" },
+    secondary: { background:C.card2,    color:C.text2, fontSize: size==="sm"?11:13, padding: size==="sm"?"4px 10px":"8px 18px", border:"1px solid "+C.border2 },
+    danger:    { background:"#450a0a",  color:"#fca5a5", fontSize: size==="sm"?11:13, padding: size==="sm"?"4px 10px":"8px 18px" },
+    ghost:     { background:"none",     color:C.text2, fontSize: size==="sm"?11:13, padding: size==="sm"?"4px 8px":"6px 12px" },
+  };
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.55)",
+    <button onClick={!disabled?onClick:undefined} disabled={disabled}
+      style={{ ...base, ...variants[variant] }}>
+      {children}
+    </button>
+  );
+}
+
+function Input({ value, onChange, placeholder, style={} }) {
+  return (
+    <input value={value} onChange={onChange} placeholder={placeholder}
+      style={{ background:C.inputBg, border:"1px solid "+C.border2, borderRadius:7,
+        color:C.text, padding:"7px 10px", fontSize:12, fontFamily:"inherit",
+        outline:"none", ...style }}/>
+  );
+}
+
+function Modal({ title, onClose, children, width=640 }) {
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)",
       zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-      <div style={{ background:"#fff", borderRadius:14, width:"100%", maxWidth:width,
+      <div style={{ background:C.card, borderRadius:14, width:"100%", maxWidth:width,
         maxHeight:"90vh", display:"flex", flexDirection:"column",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.25)" }}>
-        <div style={{ padding:"16px 20px", borderBottom:"1px solid #f1f5f9",
+        border:"1px solid "+C.border, boxShadow:"0 20px 60px rgba(0,0,0,0.5)" }}>
+        <div style={{ padding:"16px 20px", borderBottom:"1px solid "+C.border,
           display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
           <span style={{ flex:1, fontFamily:"Georgia,serif", fontWeight:900,
-            fontSize:16, color:"#0f172a" }}>{title}</span>
-          <button onClick={onClose}
-            style={{ background:"none", border:"none", cursor:"pointer",
-              color:"#94a3b8", fontSize:22, lineHeight:1, padding:"0 4px" }}>x</button>
+            fontSize:16, color:C.text }}>{title}</span>
+          <button onClick={onClose} style={{ background:"none", border:"none",
+            cursor:"pointer", color:C.text3, fontSize:20, padding:"0 4px" }}>x</button>
         </div>
         <div style={{ flex:1, overflowY:"auto", padding:20 }}>{children}</div>
       </div>
@@ -272,69 +276,53 @@ function Modal({ title, onClose, children, width = 640 }) {
 // ─── Email Modal ──────────────────────────────────────────────────────────────
 function EmailModal({ filing, company, onClose }) {
   const tmpl = EMAIL_TEMPLATES[filing.filingType] || {};
-  const vars = {
-    companyName:        company.name || "",
-    jurisdiction:       company.jurisdiction || "",
-    registrationNumber: company.registrationNumber || "",
-    year:               String(filing.year || CURRENT_YEAR),
-  };
-  const [to,      setTo]      = useState(company.clientEmail || "");
-  const [subject, setSubject] = useState(fillTemplate(tmpl.subject, vars));
-  const [body,    setBody]    = useState(fillTemplate(tmpl.body, vars));
+  const vars = { companyName:company.name||"", jurisdiction:company.jurisdiction||"",
+    registrationNumber:company.registrationNumber||"", year:String(filing.year||CURRENT_YEAR) };
+  const [to,      setTo]      = useState(company.clientEmail||"");
+  const [subject, setSubject] = useState(fill(tmpl.subject, vars));
+  const [body,    setBody]    = useState(fill(tmpl.body, vars));
   const [sending, setSending] = useState(false);
   const [sent,    setSent]    = useState(false);
 
   const send = async () => {
-    if (!to.trim()) { alert("Please enter recipient email."); return; }
+    if (!to.trim()) { alert("Enter recipient email."); return; }
     setSending(true);
-    try {
-      await apiWrite({ action:"sendComplianceEmail", to, subject, body });
-      setSent(true);
-      setTimeout(onClose, 1800);
-    } catch(e) { alert("Error sending: " + e.message); }
+    try { await apiWrite({ action:"sendComplianceEmail", to, subject, body }); setSent(true); setTimeout(onClose,1800); }
+    catch(e) { alert("Error: "+e.message); }
     setSending(false);
   };
 
+  const labelStyle = { fontSize:10, fontWeight:800, color:C.text3,
+    textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:3 };
+  const inputStyle = { width:"100%", background:C.inputBg, border:"1px solid "+C.border2,
+    borderRadius:7, color:C.text, padding:"7px 10px", fontSize:13,
+    fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+
   return (
-    <Modal title={"Send Email \u2014 " + filing.filingType} onClose={onClose} width={700}>
+    <Modal title={"Send Email \u2014 "+filing.filingType} onClose={onClose} width={700}>
       {sent ? (
         <div style={{ textAlign:"center", padding:40 }}>
           <div style={{ fontSize:48, marginBottom:12 }}>✓</div>
-          <p style={{ fontSize:15, fontWeight:700, color:"#065f46" }}>Email sent!</p>
+          <p style={{ fontSize:15, fontWeight:700, color:C.success }}>Email sent!</p>
         </div>
       ) : (
         <div>
-          {[["To", to, setTo, "text"], ["Subject", subject, setSubject, "text"]].map(([label, val, setter]) => (
+          {[["To",to,setTo],["Subject",subject,setSubject]].map(([label,val,setter])=>(
             <div key={label} style={{ marginBottom:12 }}>
-              <label style={{ fontSize:10, fontWeight:800, color:"#64748b",
-                textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:3 }}>{label}</label>
-              <input value={val} onChange={e => setter(e.target.value)}
-                style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1.5px solid #e2e8f0",
-                  fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}/>
+              <label style={labelStyle}>{label}</label>
+              <input value={val} onChange={e=>setter(e.target.value)} style={inputStyle}/>
             </div>
           ))}
           <div style={{ marginBottom:16 }}>
-            <label style={{ fontSize:10, fontWeight:800, color:"#64748b",
-              textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:3 }}>Body</label>
-            <textarea value={body} onChange={e => setBody(e.target.value)} rows={14}
-              style={{ width:"100%", padding:"7px 10px", borderRadius:7, border:"1.5px solid #e2e8f0",
-                fontSize:12, fontFamily:"inherit", outline:"none", resize:"vertical",
-                boxSizing:"border-box", lineHeight:1.6 }}/>
+            <label style={labelStyle}>Body</label>
+            <textarea value={body} onChange={e=>setBody(e.target.value)} rows={12}
+              style={{ ...inputStyle, resize:"vertical", lineHeight:1.6 }}/>
           </div>
           <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <button onClick={onClose}
-              style={{ padding:"8px 16px", borderRadius:7, border:"1.5px solid #e2e8f0",
-                background:"#fff", color:"#475569", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-              Cancel
-            </button>
-            <button onClick={send} disabled={sending || !to.trim()}
-              style={{ padding:"8px 20px", borderRadius:7, border:"none",
-                background: to.trim() && !sending ? "#6366f1" : "#94a3b8",
-                color:"#fff", fontSize:13, fontWeight:800,
-                cursor: to.trim() && !sending ? "pointer" : "default",
-                display:"flex", alignItems:"center", gap:6 }}>
-              {sending ? <><Spinner size={14} color="#fff"/>Sending...</> : "Send Email"}
-            </button>
+            <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+            <Btn onClick={send} disabled={sending||!to.trim()}>
+              {sending ? <><Spinner size={13} color="#fff"/>Sending...</> : "Send Email"}
+            </Btn>
           </div>
         </div>
       )}
@@ -345,19 +333,17 @@ function EmailModal({ filing, company, onClose }) {
 // ─── Step Row ─────────────────────────────────────────────────────────────────
 function StepRow({ step, users, isAdmin, currentUserEmail, onUpdate }) {
   const [editing,    setEditing]    = useState(false);
-  const [status,     setStatus]     = useState(step.status || "Pending");
-  const [notes,      setNotes]      = useState(step.notes  || "");
-  const [assignedTo, setAssignedTo] = useState(step.assignedTo || "");
+  const [status,     setStatus]     = useState(step.status||"Pending");
+  const [notes,      setNotes]      = useState(step.notes||"");
+  const [assignedTo, setAssignedTo] = useState(step.assignedTo||"");
   const [saving,     setSaving]     = useState(false);
-
-  const canEdit = isAdmin || currentUserEmail === step.assignedTo;
+  const canEdit = isAdmin || currentUserEmail===step.assignedTo;
+  const isDone  = step.status==="Done";
 
   const quickToggle = async () => {
     if (!canEdit) return;
-    const next = { ...step,
-      status: step.status === "Done" ? "Pending" : "Done",
-      completedAt: step.status === "Done" ? "" : new Date().toISOString(),
-    };
+    const next = { ...step, status:isDone?"Pending":"Done",
+      completedAt:isDone?"":new Date().toISOString() };
     try { await apiWrite({ action:"saveComplianceStep", step:next }); } catch(e) {}
     onUpdate(next);
   };
@@ -365,97 +351,81 @@ function StepRow({ step, users, isAdmin, currentUserEmail, onUpdate }) {
   const save = async () => {
     setSaving(true);
     const next = { ...step, status, notes, assignedTo,
-      completedAt: status === "Done" ? (step.completedAt || new Date().toISOString()) : "" };
-    try {
-      await apiWrite({ action:"saveComplianceStep", step:next });
-      onUpdate(next);
-      setEditing(false);
-    } catch(e) { alert("Error: " + e.message); }
+      completedAt:status==="Done"?(step.completedAt||new Date().toISOString()):"" };
+    try { await apiWrite({ action:"saveComplianceStep", step:next }); onUpdate(next); setEditing(false); }
+    catch(e) { alert("Error: "+e.message); }
     setSaving(false);
   };
 
-  const isDone = step.status === "Done";
+  const selStyle = { background:C.inputBg, border:"1px solid "+C.border2, borderRadius:7,
+    color:C.text, padding:"5px 8px", fontSize:12, outline:"none", width:"100%" };
+
   return (
-    <div style={{ padding:"10px 14px", borderBottom:"1px solid #f8fafc",
-      background: isDone ? "#f0fdf4" : "#fff" }}>
+    <div style={{ padding:"9px 14px", borderBottom:"1px solid "+C.border,
+      background:isDone?"#0d1f13":"transparent" }}>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <div onClick={quickToggle}
-          style={{ width:18, height:18, borderRadius:4, flexShrink:0,
-            cursor: canEdit ? "pointer" : "default",
-            background: isDone ? "#10b981" : "#fff",
-            border:"2px solid " + (isDone ? "#10b981" : "#d1d5db"),
+          style={{ width:18, height:18, borderRadius:4, flexShrink:0, cursor:canEdit?"pointer":"default",
+            background:isDone?C.success:"transparent",
+            border:"2px solid "+(isDone?C.success:C.border2),
             display:"flex", alignItems:"center", justifyContent:"center" }}>
-          {isDone && <span style={{ color:"#fff", fontSize:11 }}>✓</span>}
+          {isDone && <span style={{ color:"#fff", fontSize:10, fontWeight:900 }}>✓</span>}
         </div>
-        <span style={{ flex:1, fontSize:13, fontWeight:600,
-          color: isDone ? "#6b7280" : "#0f172a",
-          textDecoration: isDone ? "line-through" : "none" }}>
+        <span style={{ flex:1, fontSize:12, fontWeight:600,
+          color:isDone?C.text3:C.text,
+          textDecoration:isDone?"line-through":"none" }}>
           {step.stepName}
         </span>
         {step.assignedTo && (
-          <span style={{ fontSize:11, color:"#6366f1", fontWeight:700,
-            background:"#ede9fe", borderRadius:6, padding:"2px 8px" }}>
-            {(users.find(u => u.email === step.assignedTo) || {}).name || step.assignedTo.split("@")[0]}
+          <span style={{ fontSize:10, color:C.accent, fontWeight:700,
+            background:"#1e1b4b", borderRadius:6, padding:"2px 7px" }}>
+            {(users.find(u=>u.email===step.assignedTo)||{}).name?.split(" ")[0] || step.assignedTo.split("@")[0]}
           </span>
         )}
-        {!editing && <Badge status={step.status || "Pending"}/>}
+        {!editing && <Badge status={step.status||"Pending"}/>}
         {canEdit && !editing && (
-          <button onClick={() => setEditing(true)}
-            style={{ background:"none", border:"none", cursor:"pointer",
-              color:"#94a3b8", fontSize:15, padding:"0 4px" }}>✏</button>
+          <button onClick={()=>setEditing(true)}
+            style={{ background:"none", border:"none", cursor:"pointer", color:C.text3, fontSize:14, padding:"0 3px" }}>
+            ✏
+          </button>
         )}
       </div>
       {step.notes && !editing && (
-        <div style={{ marginTop:4, marginLeft:28, fontSize:11, color:"#64748b", fontStyle:"italic" }}>
+        <div style={{ marginTop:3, marginLeft:28, fontSize:11, color:C.text3, fontStyle:"italic" }}>
           {step.notes}
         </div>
       )}
       {editing && (
-        <div style={{ marginTop:10, padding:12, background:"#f8fafc",
-          borderRadius:8, border:"1px solid #e2e8f0" }}>
+        <div style={{ marginTop:10, padding:12, background:C.card2,
+          borderRadius:8, border:"1px solid "+C.border }}>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:8 }}>
             {isAdmin && (
-              <div style={{ flex:"1 1 180px" }}>
-                <label style={{ fontSize:10, fontWeight:800, color:"#64748b",
+              <div style={{ flex:"1 1 160px" }}>
+                <label style={{ fontSize:10, fontWeight:800, color:C.text3,
                   textTransform:"uppercase", display:"block", marginBottom:3 }}>Assign to</label>
-                <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}
-                  style={{ width:"100%", padding:"6px 8px", borderRadius:7,
-                    border:"1.5px solid #e2e8f0", fontSize:12, outline:"none" }}>
+                <select value={assignedTo} onChange={e=>setAssignedTo(e.target.value)} style={selStyle}>
                   <option value="">Unassigned</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.email}>{u.name}</option>
-                  ))}
+                  {users.map(u=><option key={u.id} value={u.email}>{u.name}</option>)}
                 </select>
               </div>
             )}
-            <div style={{ flex:"1 1 140px" }}>
-              <label style={{ fontSize:10, fontWeight:800, color:"#64748b",
+            <div style={{ flex:"1 1 130px" }}>
+              <label style={{ fontSize:10, fontWeight:800, color:C.text3,
                 textTransform:"uppercase", display:"block", marginBottom:3 }}>Status</label>
-              <select value={status} onChange={e => setStatus(e.target.value)}
-                style={{ width:"100%", padding:"6px 8px", borderRadius:7,
-                  border:"1.5px solid #e2e8f0", fontSize:12, outline:"none" }}>
-                {STEP_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              <select value={status} onChange={e=>setStatus(e.target.value)} style={selStyle}>
+                {STEP_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)}
-            rows={2} placeholder="Notes..."
-            style={{ width:"100%", padding:"6px 8px", borderRadius:7, border:"1.5px solid #e2e8f0",
-              fontSize:12, fontFamily:"inherit", outline:"none", resize:"vertical",
-              boxSizing:"border-box", marginBottom:8 }}/>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Notes..."
+            style={{ width:"100%", background:C.inputBg, border:"1px solid "+C.border2, borderRadius:7,
+              color:C.text, padding:"6px 8px", fontSize:12, fontFamily:"inherit",
+              outline:"none", resize:"vertical", boxSizing:"border-box", marginBottom:8 }}/>
           <div style={{ display:"flex", gap:6 }}>
-            <button onClick={() => setEditing(false)}
-              style={{ padding:"5px 12px", borderRadius:6, border:"1.5px solid #e2e8f0",
-                background:"#fff", color:"#475569", fontSize:12, fontWeight:700, cursor:"pointer" }}>
-              Cancel
-            </button>
-            <button onClick={save} disabled={saving}
-              style={{ padding:"5px 14px", borderRadius:6, border:"none",
-                background:"#6366f1", color:"#fff", fontSize:12, fontWeight:800,
-                cursor: saving ? "default" : "pointer",
-                display:"flex", alignItems:"center", gap:4 }}>
-              {saving ? <><Spinner size={11} color="#fff"/>Saving...</> : "Save"}
-            </button>
+            <Btn variant="secondary" size="sm" onClick={()=>setEditing(false)}>Cancel</Btn>
+            <Btn size="sm" onClick={save} disabled={saving}>
+              {saving?<><Spinner size={10} color="#fff"/>Saving...</>:"Save"}
+            </Btn>
           </div>
         </div>
       )}
@@ -464,71 +434,278 @@ function StepRow({ step, users, isAdmin, currentUserEmail, onUpdate }) {
 }
 
 // ─── Filing Card ──────────────────────────────────────────────────────────────
-function FilingCard({ filing, company, users, isAdmin, currentUserEmail, onUpdate }) {
-  const [steps,       setSteps]       = useState(filing.steps || []);
+function FilingCard({ filing, company, users, isAdmin, currentUserEmail, onUpdate, onEmail }) {
+  const [steps,       setSteps]       = useState(filing.steps||[]);
   const [expanded,    setExpanded]    = useState(false);
-  const [emailModal,  setEmailModal]  = useState(false);
-  const [filingStatus,setFilingStatus]= useState(filing.status || "Not Started");
-
+  const [filingStatus,setFilingStatus]= useState(filing.status||"Not Started");
   const days = daysUntil(filing.dueDate);
-  const done = steps.filter(s => s.status === "Done").length;
-  const pct  = steps.length ? Math.round((done / steps.length) * 100) : 0;
+  const done = steps.filter(s=>s.status==="Done").length;
+  const pct  = steps.length ? Math.round((done/steps.length)*100) : 0;
 
-  const recalcStatus = (newSteps) => {
-    if (newSteps.every(s => s.status === "Done"))            return "Complete";
-    if (newSteps.some(s => s.status === "Waiting Client"))   return "Waiting Client";
-    if (newSteps.some(s => s.status === "In Progress"))      return "In Progress";
+  const recalc = (ns) => {
+    if (ns.every(s=>s.status==="Done")) return "Complete";
+    if (ns.some(s=>s.status==="Waiting Client")) return "Waiting Client";
+    if (ns.some(s=>s.status==="In Progress"))    return "In Progress";
     return "Not Started";
   };
 
   const updateStep = async (updated) => {
-    const newSteps = steps.map(s => s.stepId === updated.stepId ? updated : s);
-    const newStatus = recalcStatus(newSteps);
-    setSteps(newSteps);
-    setFilingStatus(newStatus);
-    try {
-      await apiWrite({ action:"saveComplianceFiling",
-        filing:{ ...filing, status:newStatus, steps:newSteps }});
-      onUpdate({ ...filing, status:newStatus, steps:newSteps });
-    } catch(e) {}
+    const ns = steps.map(s=>s.stepId===updated.stepId?updated:s);
+    const st = recalc(ns);
+    setSteps(ns); setFilingStatus(st);
+    try { await apiWrite({ action:"saveComplianceFiling", filing:{...filing, status:st, steps:ns} }); onUpdate({...filing,status:st,steps:ns}); }
+    catch(e) {}
   };
 
   return (
-    <div style={{ border:"1px solid #e2e8f0", borderRadius:10, overflow:"hidden", marginBottom:12 }}>
-      <div style={{ padding:"12px 16px", background:"#f8fafc",
+    <div style={{ border:"1px solid "+C.border, borderRadius:10, overflow:"hidden", marginBottom:10 }}>
+      <div style={{ padding:"11px 14px", background:C.card2,
         display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
-        onClick={() => setExpanded(v => !v)}>
+        onClick={()=>setExpanded(v=>!v)}>
         <div style={{ flex:1 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:4 }}>
-            <span style={{ fontWeight:800, fontSize:14, color:"#0f172a" }}>{filing.filingType}</span>
+            <span style={{ fontWeight:800, fontSize:13, color:C.text }}>{filing.filingType}</span>
             <Badge status={filingStatus}/>
-            {filingStatus !== "Complete" && <DaysBadge days={days}/>}
+            {filingStatus!=="Complete" && <DaysBadge days={days}/>}
           </div>
-          <div style={{ fontSize:11, color:"#64748b" }}>
-            Due: {formatDate(filing.dueDate)} &middot; {done}/{steps.length} steps complete
+          <div style={{ fontSize:11, color:C.text3 }}>
+            Due: {fmtDate(filing.dueDate)} &middot; {done}/{steps.length} steps
           </div>
-          <div style={{ marginTop:6, height:4, background:"#e2e8f0", borderRadius:2 }}>
+          <div style={{ marginTop:5, height:3, background:C.border, borderRadius:2 }}>
             <div style={{ width:pct+"%", height:"100%", borderRadius:2,
-              background: pct===100 ? "#10b981" : "#6366f1", transition:"width 0.3s" }}/>
+              background:pct===100?C.success:C.accent, transition:"width 0.3s" }}/>
           </div>
         </div>
         {isAdmin && (
-          <button onClick={e => { e.stopPropagation(); setEmailModal(true); }}
-            style={{ background:"#6366f1", color:"#fff", border:"none", borderRadius:7,
-              padding:"5px 12px", fontSize:11, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap" }}>
-            ✉ Email
-          </button>
+          <Btn size="sm" onClick={e=>{e.stopPropagation();onEmail(filing);}}>✉ Email</Btn>
         )}
-        <span style={{ color:"#94a3b8", fontSize:13, display:"inline-block",
-          transform: expanded ? "rotate(180deg)" : "none", transition:"transform 0.2s" }}>▼</span>
+        <span style={{ color:C.text3, fontSize:11, display:"inline-block",
+          transform:expanded?"rotate(180deg)":"none", transition:"transform 0.2s" }}>▼</span>
       </div>
-      {expanded && steps.map(step => (
+      {expanded && steps.map(step=>(
         <StepRow key={step.stepId} step={step} users={users}
           isAdmin={isAdmin} currentUserEmail={currentUserEmail}
           onUpdate={updateStep}/>
       ))}
-      {emailModal && (
-        <EmailModal filing={filing} company={company} onClose={() => setEmailModal(false)}/>
+    </div>
+  );
+}
+
+// ─── Year Manager Modal ───────────────────────────────────────────────────────
+function YearManager({ companies, filings, setFilings, yearFilter, setYearFilter, onClose, showToast }) {
+  const [working,  setWorking]  = useState(false);
+  const [progress, setProgress] = useState("");
+  const [delYear,  setDelYear]  = useState("");
+  const [newYear,  setNewYear]  = useState(String(CURRENT_YEAR));
+
+  const years = [...new Set(
+    Object.values(filings).flat().map(f=>String(f.year)).filter(Boolean)
+  )].sort().reverse();
+
+  const initAllCompanies = async () => {
+    if (!newYear) return;
+    setWorking(true);
+    let created = 0;
+    for (const c of companies) {
+      const types = getFilingTypes(c.jurisdiction);
+      const existing = (filings[c.name]||[]).filter(f=>String(f.year)===newYear).map(f=>f.filingType);
+      const toCreate = types.filter(ft=>!existing.includes(ft));
+      for (const ft of toCreate) {
+        const steps = (DEFAULT_STEPS[ft]||[]).map((name,i)=>({
+          stepId:"s_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,6),
+          stepName:name, assignedTo:"", status:"Pending", notes:"", completedAt:"", order:i
+        }));
+        const f = {
+          filingId:"f_"+Date.now()+"_"+Math.random().toString(36).slice(2,6),
+          companyName:c.name, jurisdiction:c.jurisdiction, filingType:ft,
+          year:parseInt(newYear), status:"Not Started",
+          dueDate:getDueDate(ft,parseInt(newYear)), steps, yearNotes:"",
+        };
+        try { await apiWrite({ action:"saveComplianceFiling", filing:f }); created++; }
+        catch(e) {}
+        setProgress("Creating... "+created+" filings");
+        setFilings(prev=>({ ...prev, [c.name]:[...(prev[c.name]||[]), f] }));
+      }
+    }
+    setYearFilter(newYear);
+    setProgress("");
+    showToast(created+" filings created for "+newYear);
+    setWorking(false);
+  };
+
+  const deleteYear = async () => {
+    if (!delYear || !window.confirm("Delete ALL filings for "+delYear+"? This cannot be undone.")) return;
+    setWorking(true);
+    const toDelete = Object.values(filings).flat().filter(f=>String(f.year)===delYear);
+    for (const f of toDelete) {
+      try { await apiWrite({ action:"deleteComplianceFiling", filingId:f.filingId }); } catch(e) {}
+    }
+    setFilings(prev=>{
+      const next = {};
+      Object.entries(prev).forEach(([k,v])=>{ next[k]=v.filter(f=>String(f.year)!==delYear); });
+      return next;
+    });
+    if (yearFilter===delYear) setYearFilter(String(CURRENT_YEAR));
+    showToast("All "+delYear+" filings deleted");
+    setDelYear("");
+    setWorking(false);
+  };
+
+  const selectStyle = { background:C.inputBg, border:"1px solid "+C.border2, borderRadius:7,
+    color:C.text, padding:"7px 10px", fontSize:13, outline:"none", width:"100%" };
+
+  return (
+    <Modal title="Manage Filing Years" onClose={onClose} width={520}>
+      <div>
+        {/* Create new year */}
+        <div style={{ background:C.card2, borderRadius:10, padding:16, marginBottom:16,
+          border:"1px solid "+C.border }}>
+          <div style={{ fontWeight:800, fontSize:13, color:C.text, marginBottom:12 }}>
+            Initialize Year for All Companies
+          </div>
+          <div style={{ marginBottom:12 }}>
+            <label style={{ fontSize:11, color:C.text3, display:"block", marginBottom:4 }}>Year</label>
+            <select value={newYear} onChange={e=>setNewYear(e.target.value)} style={selectStyle}>
+              {[CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1,CURRENT_YEAR-2].map(y=>(
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          <p style={{ fontSize:11, color:C.text3, marginBottom:12, lineHeight:1.5 }}>
+            This will create all required filings for every company based on their jurisdiction.
+            Existing filings for this year will not be affected.
+          </p>
+          {progress && (
+            <p style={{ fontSize:11, color:C.accent, marginBottom:8 }}>{progress}</p>
+          )}
+          <Btn onClick={initAllCompanies} disabled={working}>
+            {working?<><Spinner size={13} color="#fff"/>Working...</>:"Create All Filings for "+newYear}
+          </Btn>
+        </div>
+
+        {/* Delete year */}
+        <div style={{ background:"#1a0a0a", borderRadius:10, padding:16,
+          border:"1px solid #450a0a" }}>
+          <div style={{ fontWeight:800, fontSize:13, color:"#fca5a5", marginBottom:12 }}>
+            Delete Entire Year
+          </div>
+          <div style={{ marginBottom:12 }}>
+            <label style={{ fontSize:11, color:C.text3, display:"block", marginBottom:4 }}>Select year to delete</label>
+            <select value={delYear} onChange={e=>setDelYear(e.target.value)} style={selectStyle}>
+              <option value="">-- Select year --</option>
+              {years.map(y=><option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <Btn variant="danger" onClick={deleteYear} disabled={!delYear||working}>
+            Delete All {delYear||"..."} Filings
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Side Panel ───────────────────────────────────────────────────────────────
+function SidePanel({ company, filings, users, isAdmin, currentUserEmail, yearFilter, onClose, updateFiling }) {
+  const [emailFiling, setEmailFiling] = useState(null);
+  const [notes,       setNotes]       = useState("");
+  const [notesSaved,  setNotesSaved]  = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  const cos = (filings[company.name]||[]).filter(f=>String(f.year)===yearFilter);
+
+  // Load notes from the special __notes__ filing
+  useEffect(()=>{
+    const notesFiling = cos.find(f=>f.filingType==="__notes__");
+    setNotes(notesFiling ? (notesFiling.yearNotes||"") : "");
+    setNotesSaved(false);
+  }, [company.name, yearFilter]);
+
+  const saveNotes = async () => {
+    setSavingNotes(true);
+    const existing = cos.find(f=>f.filingType==="__notes__");
+    const notesRecord = existing
+      ? { ...existing, yearNotes:notes }
+      : {
+          filingId:"notes_"+company.name.replace(/\s/g,"_")+"_"+yearFilter,
+          companyName:company.name, jurisdiction:company.jurisdiction,
+          filingType:"__notes__", year:parseInt(yearFilter),
+          status:"N/A", dueDate:"", steps:[], yearNotes:notes,
+        };
+    try {
+      await apiWrite({ action:"saveComplianceFiling", filing:notesRecord });
+      updateFiling(company.name, notesRecord);
+      setNotesSaved(true);
+      setTimeout(()=>setNotesSaved(false), 2000);
+    } catch(e) { alert("Error saving notes: "+e.message); }
+    setSavingNotes(false);
+  };
+
+  const realFilings = cos.filter(f=>f.filingType!=="__notes__");
+
+  return (
+    <div style={{ position:"fixed", top:54, right:0, bottom:0, width:"55%", maxWidth:820,
+      background:C.card, borderLeft:"1px solid "+C.border, display:"flex", flexDirection:"column",
+      zIndex:100, overflowY:"auto", boxShadow:"-8px 0 32px rgba(0,0,0,0.4)" }}>
+      {/* Header */}
+      <div style={{ padding:"16px 20px", borderBottom:"1px solid "+C.border,
+        display:"flex", alignItems:"flex-start", gap:12, flexShrink:0,
+        background:C.card2, position:"sticky", top:0, zIndex:10 }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontFamily:"Georgia,serif", fontSize:17, fontWeight:900,
+            color:C.text, marginBottom:4 }}>{company.name}</div>
+          <div style={{ display:"flex", gap:16, fontSize:11, color:C.text3, flexWrap:"wrap" }}>
+            <span>{company.jurisdiction}</span>
+            {company.registrationNumber && <span>#{company.registrationNumber}</span>}
+            {company.clientEmail && <span>{company.clientEmail}</span>}
+            {company.accounting && <span>Acct: {company.accounting}</span>}
+          </div>
+        </div>
+        <button onClick={onClose} style={{ background:"none", border:"none",
+          cursor:"pointer", color:C.text3, fontSize:22, padding:"0 4px", flexShrink:0 }}>x</button>
+      </div>
+
+      <div style={{ padding:20, flex:1 }}>
+        {/* Notes section */}
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontSize:11, fontWeight:900, color:C.text3,
+            textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>
+            Notes — {yearFilter}
+          </div>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3}
+            placeholder={"Add notes for "+company.name+" ("+yearFilter+")..."}
+            style={{ width:"100%", background:C.inputBg, border:"1px solid "+C.border2,
+              borderRadius:8, color:C.text, padding:"8px 10px", fontSize:12,
+              fontFamily:"inherit", outline:"none", resize:"vertical",
+              boxSizing:"border-box", lineHeight:1.6, marginBottom:8 }}/>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <Btn size="sm" onClick={saveNotes} disabled={savingNotes}>
+              {savingNotes?<><Spinner size={10} color="#fff"/>Saving...</>:"Save Notes"}
+            </Btn>
+            {notesSaved && <span style={{ fontSize:11, color:C.success }}>Saved ✓</span>}
+          </div>
+        </div>
+
+        {/* Filings */}
+        <div style={{ fontSize:11, fontWeight:900, color:C.text3,
+          textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:12 }}>
+          Filings — {yearFilter}
+        </div>
+        {realFilings.length===0 ? (
+          <div style={{ textAlign:"center", padding:32, color:C.text3, fontSize:13 }}>
+            No filings for {yearFilter} yet.
+          </div>
+        ) : realFilings.map(filing=>(
+          <FilingCard key={filing.filingId} filing={filing} company={company}
+            users={users} isAdmin={isAdmin} currentUserEmail={currentUserEmail}
+            onUpdate={f=>updateFiling(company.name,f)}
+            onEmail={f=>setEmailFiling(f)}/>
+        ))}
+      </div>
+
+      {emailFiling && (
+        <EmailModal filing={emailFiling} company={company}
+          onClose={()=>setEmailFiling(null)}/>
       )}
     </div>
   );
@@ -537,423 +714,329 @@ function FilingCard({ filing, company, users, isAdmin, currentUserEmail, onUpdat
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const { user: clerkUser } = useUser();
-
   const [companies,    setCompanies]    = useState([]);
   const [users,        setUsers]        = useState([]);
   const [filings,      setFilings]      = useState({});
   const [currentUser,  setCurrentUser]  = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
-  const [view,         setView]         = useState("dashboard");
-  const [selected,     setSelected]     = useState(null);
   const [yearFilter,   setYearFilter]   = useState(String(CURRENT_YEAR));
   const [search,       setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [jurFilter,    setJurFilter]    = useState("All");
+  const [typeFilter,   setTypeFilter]   = useState("All");
+  const [selectedCo,   setSelectedCo]   = useState(null);
   const [toast,        setToast]        = useState(null);
-  const [creating,     setCreating]     = useState(false);
+  const [yearMgr,      setYearMgr]      = useState(false);
 
   const isAdmin = currentUser && (
-    ADMIN_EMAILS.includes((currentUser.email || "").toLowerCase()) ||
-    currentUser.role === "admin" || currentUser.role === "editor"
+    ADMIN_EMAILS.includes((currentUser.email||"").toLowerCase()) ||
+    currentUser.role==="admin" || currentUser.role==="editor"
   );
 
-  const showToast = (msg, type = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
+  const showToast = (msg, type="success") => {
+    setToast({msg,type}); setTimeout(()=>setToast(null),3500);
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async()=>{
     if (!clerkUser) return;
     setLoading(true);
     try {
-      const email = clerkUser.primaryEmailAddress?.emailAddress?.toLowerCase() || "";
-      const [cd, ud, fd] = await Promise.all([
-        apiRead("getCompanies"),
-        apiRead("getUsers"),
-        apiRead("getFilings", { year: yearFilter }),
+      const email = (clerkUser.primaryEmailAddress?.emailAddress||"").toLowerCase();
+      const [cd,ud,fd] = await Promise.all([
+        apiRead("getCompanies"), apiRead("getUsers"), apiRead("getFilings",{year:yearFilter})
       ]);
-
-      const userList = ud.users || [];
-      const match    = userList.find(u => (u.email || "").toLowerCase() === email);
-      setCurrentUser(match || { email, role:"viewer", name: clerkUser.fullName || email });
-      setUsers(userList);
-      setCompanies(cd.companies || []);
-
-      const fm = {};
-      (fd.filings || []).forEach(f => {
-        if (!fm[f.companyName]) fm[f.companyName] = [];
-        fm[f.companyName].push(f);
-      });
+      const ul = ud.users||[];
+      const match = ul.find(u=>(u.email||"").toLowerCase()===email);
+      setCurrentUser(match||{email,role:"viewer",name:clerkUser.fullName||email});
+      setUsers(ul);
+      setCompanies(cd.companies||[]);
+      const fm={};
+      (fd.filings||[]).forEach(f=>{ if(!fm[f.companyName])fm[f.companyName]=[]; fm[f.companyName].push(f); });
       setFilings(fm);
     } catch(e) { setError(e.message); }
     setLoading(false);
-  }, [clerkUser, yearFilter]);
+  },[clerkUser, yearFilter]);
 
-  useEffect(() => { if (clerkUser) loadData(); }, [clerkUser, loadData]);
-
-  const createFilingsForCompany = async (company) => {
-    setCreating(true);
-    const filingTypes = getFilingTypesForJurisdiction(company.jurisdiction);
-    const existing    = (filings[company.name] || [])
-      .filter(f => String(f.year) === yearFilter)
-      .map(f => f.filingType);
-    const toCreate = filingTypes.filter(ft => !existing.includes(ft));
-
-    if (toCreate.length === 0) {
-      showToast("All filings already created for " + yearFilter);
-      setCreating(false);
-      return;
-    }
-    try {
-      const newFilings = [];
-      for (const ft of toCreate) {
-        const steps = (DEFAULT_STEPS[ft] || []).map((name, i) => ({
-          stepId:      "s_" + Date.now() + "_" + i,
-          stepName:    name,
-          assignedTo:  "",
-          status:      "Pending",
-          notes:       "",
-          completedAt: "",
-          order:       i,
-        }));
-        const f = {
-          filingId:    "f_" + Date.now() + "_" + ft.replace(/\s/g, ""),
-          companyName: company.name,
-          jurisdiction:company.jurisdiction,
-          filingType:  ft,
-          year:        parseInt(yearFilter),
-          status:      "Not Started",
-          dueDate:     getDueDate(ft, parseInt(yearFilter)),
-          steps,
-        };
-        await apiWrite({ action:"saveComplianceFiling", filing:f });
-        newFilings.push(f);
-      }
-      setFilings(prev => ({
-        ...prev,
-        [company.name]: [...(prev[company.name] || []), ...newFilings],
-      }));
-      showToast(toCreate.join(", ") + " created for " + yearFilter);
-    } catch(e) { showToast("Error: " + e.message, "error"); }
-    setCreating(false);
-  };
+  useEffect(()=>{ if(clerkUser) loadData(); },[clerkUser,loadData]);
 
   const updateFiling = (companyName, updatedFiling) => {
-    setFilings(prev => ({
+    setFilings(prev=>({
       ...prev,
-      [companyName]: (prev[companyName] || []).map(f =>
-        f.filingId === updatedFiling.filingId ? updatedFiling : f
-      ),
+      [companyName]:(prev[companyName]||[]).map(f=>f.filingId===updatedFiling.filingId?updatedFiling:f)
+        .concat((prev[companyName]||[]).some(f=>f.filingId===updatedFiling.filingId)?[]:[updatedFiling])
     }));
   };
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
+  // Stats
   const allFilings = Object.values(filings).flat()
-    .filter(f => String(f.year) === yearFilter);
+    .filter(f=>String(f.year)===yearFilter && f.filingType!=="__notes__");
   const stats = {
     total:    allFilings.length,
-    complete: allFilings.filter(f => f.status === "Complete").length,
-    overdue:  allFilings.filter(f => f.status !== "Complete" && daysUntil(f.dueDate) < 0).length,
-    dueSoon:  allFilings.filter(f => f.status !== "Complete" &&
-                daysUntil(f.dueDate) >= 0 && daysUntil(f.dueDate) <= 30).length,
+    complete: allFilings.filter(f=>f.status==="Complete").length,
+    overdue:  allFilings.filter(f=>f.status!=="Complete"&&daysUntil(f.dueDate)<0).length,
+    dueSoon:  allFilings.filter(f=>f.status!=="Complete"&&daysUntil(f.dueDate)>=0&&daysUntil(f.dueDate)<=30).length,
   };
 
-  // ── My Tasks ───────────────────────────────────────────────────────────────
-  const myTasks = allFilings.flatMap(f =>
-    (f.steps || [])
-      .filter(s => s.assignedTo === currentUser?.email && s.status !== "Done")
-      .map(s => ({
-        ...s,
-        filing:  f,
-        company: companies.find(c => c.name === f.companyName),
-      }))
-  ).sort((a, b) => new Date(a.filing.dueDate) - new Date(b.filing.dueDate));
+  // My tasks
+  const myTasks = allFilings.flatMap(f=>
+    (f.steps||[]).filter(s=>s.assignedTo===currentUser?.email&&s.status!=="Done")
+      .map(s=>({...s, filing:f, company:companies.find(c=>c.name===f.companyName)}))
+  ).sort((a,b)=>new Date(a.filing.dueDate)-new Date(b.filing.dueDate));
 
-  // ── Filtered companies ─────────────────────────────────────────────────────
-  const visibleCompanies = companies.filter(c => {
-    if (search && !c.name?.toLowerCase().includes(search.toLowerCase())) return false;
-    if (statusFilter === "All") return true;
-    const cos = (filings[c.name] || []).filter(f => String(f.year) === yearFilter);
-    if (statusFilter === "No Filings") return cos.length === 0;
-    return cos.some(f => f.status === statusFilter);
-  });
+  // Jurisdiction options
+  const jurOptions = ["All", ...new Set(companies.map(c=>c.jurisdiction).filter(Boolean))].sort();
 
-  const getWorstStatus = (companyName) => {
-    const cos = (filings[companyName] || []).filter(f => String(f.year) === yearFilter);
-    if (cos.length === 0) return "No Filings";
-    if (cos.some(f => f.status !== "Complete" && daysUntil(f.dueDate) < 0)) return "Overdue";
-    if (cos.every(f => f.status === "Complete")) return "Complete";
-    if (cos.some(f => f.status === "Waiting Client")) return "Waiting Client";
-    if (cos.some(f => f.status === "In Progress"))    return "In Progress";
+  const getWorstStatus = (name) => {
+    const cos = (filings[name]||[]).filter(f=>String(f.year)===yearFilter&&f.filingType!=="__notes__");
+    if (!cos.length) return "No Filings";
+    if (cos.some(f=>f.status!=="Complete"&&daysUntil(f.dueDate)<0)) return "Overdue";
+    if (cos.every(f=>f.status==="Complete")) return "Complete";
+    if (cos.some(f=>f.status==="Waiting Client")) return "Waiting Client";
+    if (cos.some(f=>f.status==="In Progress"))    return "In Progress";
     return "Not Started";
   };
 
-  // ── Loading / Error ────────────────────────────────────────────────────────
+  const visibleCompanies = companies.filter(c=>{
+    if (search && !c.name?.toLowerCase().includes(search.toLowerCase())) return false;
+    if (jurFilter!=="All" && c.jurisdiction!==jurFilter) return false;
+    if (typeFilter!=="All") {
+      const types = getFilingTypes(c.jurisdiction);
+      if (!types.includes(typeFilter)) return false;
+    }
+    if (statusFilter==="All") return true;
+    const ws = getWorstStatus(c.name);
+    if (statusFilter==="No Filings") return ws==="No Filings";
+    return ws===statusFilter;
+  });
+
   if (loading) return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center",
-      justifyContent:"center", background:"#f1f5f9" }}>
+      justifyContent:"center", background:C.bg }}>
       <Spinner size={32}/>
     </div>
   );
 
   if (error) return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center",
-      justifyContent:"center", background:"#f1f5f9", flexDirection:"column", gap:12 }}>
+      justifyContent:"center", background:C.bg, flexDirection:"column", gap:12 }}>
       <div style={{ fontSize:40 }}>⚠️</div>
-      <p style={{ fontSize:15, fontWeight:700, color:"#0f172a" }}>Could not connect</p>
-      <p style={{ fontSize:13, color:"#64748b" }}>{error}</p>
-      <button onClick={loadData}
-        style={{ background:"#6366f1", color:"#fff", border:"none", borderRadius:8,
-          padding:"8px 20px", fontSize:13, fontWeight:800, cursor:"pointer" }}>Retry</button>
+      <p style={{ fontSize:15, fontWeight:700, color:C.text }}>Could not connect</p>
+      <p style={{ fontSize:13, color:C.text3 }}>{error}</p>
+      <Btn onClick={loadData}>Retry</Btn>
     </div>
   );
 
+  const panelOpen = !!selectedCo;
+
   return (
-    <div style={{ minHeight:"100vh", background:"#f1f5f9",
-      fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:C.bg,
+      fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+      color:C.text }}>
 
       {/* Header */}
-      <div style={{ background:"#0f172a", padding:"0 24px",
-        display:"flex", alignItems:"center", gap:14, height:54 }}>
-        <span style={{ fontFamily:"Georgia,serif", fontWeight:900, fontSize:16, color:"#fff" }}>
+      <div style={{ background:"#000", borderBottom:"1px solid "+C.border,
+        padding:"0 20px", display:"flex", alignItems:"center", gap:12, height:54,
+        position:"sticky", top:0, zIndex:200 }}>
+        <span style={{ fontFamily:"Georgia,serif", fontWeight:900, fontSize:15, color:C.text }}>
           Compliance Tracker
         </span>
-        <span style={{ color:"#334155" }}>|</span>
-        <span style={{ fontSize:12, color:"#64748b" }}>Westchester International</span>
+        <span style={{ color:C.border2 }}>|</span>
+        <span style={{ fontSize:11, color:C.text3 }}>Westchester International</span>
         <div style={{ flex:1 }}/>
-        <select value={yearFilter} onChange={e => setYearFilter(e.target.value)}
-          style={{ background:"#1e293b", color:"#e2e8f0", border:"1px solid #334155",
+
+        {/* Year selector */}
+        <select value={yearFilter} onChange={e=>{setYearFilter(e.target.value);setSelectedCo(null);}}
+          style={{ background:"#111", color:C.text, border:"1px solid "+C.border2,
             borderRadius:7, padding:"4px 10px", fontSize:12, fontWeight:700, outline:"none" }}>
-          {[CURRENT_YEAR+1, CURRENT_YEAR, CURRENT_YEAR-1, CURRENT_YEAR-2].map(y => (
+          {[CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1,CURRENT_YEAR-2].map(y=>(
             <option key={y} value={y}>{y}</option>
           ))}
         </select>
-        {[
-          { key:"dashboard", label:"Dashboard" },
-          { key:"tasks",     label:"My Tasks" + (myTasks.length ? " (" + myTasks.length + ")" : "") },
-        ].map(({ key, label }) => (
-          <button key={key} onClick={() => setView(key)}
-            style={{ background: view===key ? "#6366f1" : "none",
-              color: view===key ? "#fff" : "#94a3b8", border:"none",
-              borderRadius:7, padding:"5px 12px", fontSize:11, fontWeight:700, cursor:"pointer" }}>
-            {label}
-          </button>
-        ))}
+
+        {isAdmin && (
+          <Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>
+            🗓 Manage Years
+          </Btn>
+        )}
+
         <UserButton/>
       </div>
 
-      <div style={{ maxWidth:1280, margin:"0 auto", padding:24 }}>
-
-        {/* ── Dashboard ── */}
-        {view === "dashboard" && !selected && (
-          <>
-            {/* Stats */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:24 }}>
-              {[
-                { label:"Total Filings",   value:stats.total,    color:"#6366f1" },
-                { label:"Complete",        value:stats.complete, color:"#059669" },
-                { label:"Overdue",         value:stats.overdue,  color:"#dc2626" },
-                { label:"Due in 30 days",  value:stats.dueSoon,  color:"#d97706" },
-              ].map(s => (
-                <div key={s.label} style={{ background:"#fff", borderRadius:12,
-                  padding:"16px 20px", border:"1px solid #e2e8f0" }}>
-                  <div style={{ fontSize:30, fontWeight:900, color:s.color }}>{s.value}</div>
-                  <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Toolbar */}
-            <div style={{ background:"#fff", borderRadius:12, border:"1px solid #e2e8f0",
-              overflow:"hidden" }}>
-              <div style={{ padding:"12px 16px", borderBottom:"1px solid #f1f5f9",
-                display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
-                <div style={{ position:"relative", flex:"1 1 220px", maxWidth:280 }}>
-                  <span style={{ position:"absolute", left:9, top:"50%",
-                    transform:"translateY(-50%)", color:"#94a3b8", fontSize:12 }}>🔍</span>
-                  <input value={search} onChange={e => setSearch(e.target.value)}
-                    placeholder="Search companies..."
-                    style={{ width:"100%", padding:"6px 8px 6px 28px", borderRadius:8,
-                      border:"1.5px solid #e2e8f0", fontSize:12, outline:"none",
-                      boxSizing:"border-box", fontFamily:"inherit" }}/>
-                </div>
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-                  style={{ padding:"6px 10px", borderRadius:8, border:"1.5px solid #e2e8f0",
-                    fontSize:12, outline:"none", fontFamily:"inherit" }}>
-                  <option value="All">All Statuses</option>
-                  {FILING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                  <option value="No Filings">No Filings</option>
-                </select>
-                <span style={{ fontSize:12, color:"#64748b" }}>{visibleCompanies.length} companies</span>
-              </div>
-
-              {/* Column headers */}
-              <div style={{ display:"grid", gridTemplateColumns:"2.5fr 1fr 1.5fr 1fr 90px",
-                padding:"8px 16px", background:"#f8fafc", borderBottom:"1px solid #f1f5f9" }}>
-                {["Company","Jurisdiction","Filing Types","Status",""].map(h => (
-                  <span key={h} style={{ fontSize:10, fontWeight:900, color:"#94a3b8",
-                    textTransform:"uppercase", letterSpacing:"0.07em" }}>{h}</span>
-                ))}
-              </div>
-
-              {/* Rows */}
-              {visibleCompanies.length === 0 ? (
-                <div style={{ padding:48, textAlign:"center", color:"#94a3b8", fontSize:13 }}>
-                  No companies match your filters.
-                </div>
-              ) : visibleCompanies.map(c => {
-                const ws = getWorstStatus(c.name);
-                const rowBg = ws === "Overdue" ? "#fff5f5" : ws === "Complete" ? "#f0fdf4" : "#fff";
-                const cos   = (filings[c.name] || []).filter(f => String(f.year) === yearFilter);
-                return (
-                  <div key={c.name}
-                    onClick={() => setSelected(c)}
-                    style={{ display:"grid", gridTemplateColumns:"2.5fr 1fr 1.5fr 1fr 90px",
-                      padding:"11px 16px", borderBottom:"1px solid #f8fafc",
-                      cursor:"pointer", background:rowBg, transition:"filter 0.1s" }}
-                    onMouseEnter={e => e.currentTarget.style.filter="brightness(0.97)"}
-                    onMouseLeave={e => e.currentTarget.style.filter="none"}>
-                    <div>
-                      <div style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>{c.name}</div>
-                      {c.clientEmail && (
-                        <div style={{ fontSize:11, color:"#64748b" }}>{c.clientEmail}</div>
-                      )}
-                    </div>
-                    <div style={{ fontSize:12, color:"#475569", display:"flex", alignItems:"center" }}>
-                      {c.jurisdiction}
-                    </div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:3,
-                      justifyContent:"center", alignItems:"flex-start" }}>
-                      {getFilingTypesForJurisdiction(c.jurisdiction).map(ft => (
-                        <span key={ft} style={{ fontSize:10, background:"#f1f5f9",
-                          color:"#475569", borderRadius:4, padding:"1px 6px" }}>{ft}</span>
-                      ))}
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center" }}>
-                      {cos.length === 0
-                        ? <span style={{ fontSize:11, color:"#94a3b8", fontStyle:"italic" }}>No filings</span>
-                        : <Badge status={ws}/>}
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center" }}>
-                      {isAdmin && cos.length === 0 && (
-                        <button
-                          onClick={e => { e.stopPropagation(); createFilingsForCompany(c); }}
-                          disabled={creating}
-                          style={{ background:"#6366f1", color:"#fff", border:"none",
-                            borderRadius:6, padding:"4px 9px", fontSize:10,
-                            fontWeight:800, cursor:"pointer" }}>
-                          + Create
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {/* ── Company Detail ── */}
-        {view === "dashboard" && selected && (
-          <div>
-            <button onClick={() => setSelected(null)}
-              style={{ background:"none", border:"none", cursor:"pointer",
-                color:"#6366f1", fontSize:13, fontWeight:700,
-                marginBottom:16, display:"flex", alignItems:"center", gap:4 }}>
-              ← Back to Dashboard
-            </button>
-            <div style={{ background:"#fff", borderRadius:12, padding:"16px 20px",
-              border:"1px solid #e2e8f0", marginBottom:20 }}>
-              <div style={{ fontFamily:"Georgia,serif", fontSize:18, fontWeight:900,
-                color:"#0f172a", marginBottom:6 }}>{selected.name}</div>
-              <div style={{ display:"flex", gap:20, fontSize:12, color:"#64748b", flexWrap:"wrap" }}>
-                <span>📍 {selected.jurisdiction}</span>
-                {selected.registrationNumber && <span>🔢 {selected.registrationNumber}</span>}
-                {selected.clientEmail && <span>✉ {selected.clientEmail}</span>}
-                {selected.accounting && <span>👤 {selected.accounting}</span>}
-              </div>
-            </div>
-            {isAdmin && (
-              <button onClick={() => createFilingsForCompany(selected)} disabled={creating}
-                style={{ background:"#6366f1", color:"#fff", border:"none", borderRadius:8,
-                  padding:"8px 18px", fontSize:13, fontWeight:800, marginBottom:16,
-                  cursor: creating ? "default" : "pointer", opacity: creating ? 0.7 : 1,
-                  display:"flex", alignItems:"center", gap:6 }}>
-                {creating ? <><Spinner size={13} color="#fff"/>Creating...</> :
-                  "+ Initialize " + yearFilter + " Filings"}
-              </button>
-            )}
-            {(filings[selected.name] || []).filter(f => String(f.year) === yearFilter).length === 0 ? (
-              <div style={{ background:"#fff", borderRadius:12, border:"1px solid #e2e8f0",
-                padding:48, textAlign:"center", color:"#94a3b8", fontSize:13 }}>
-                No filings for {yearFilter} yet.
-                {isAdmin && " Click the button above to initialize them."}
-              </div>
-            ) : (
-              (filings[selected.name] || [])
-                .filter(f => String(f.year) === yearFilter)
-                .map(filing => (
-                  <FilingCard key={filing.filingId}
-                    filing={filing} company={selected}
-                    users={users} isAdmin={isAdmin}
-                    currentUserEmail={currentUser?.email}
-                    onUpdate={f => updateFiling(selected.name, f)}/>
-                ))
-            )}
+      {/* Stats bar */}
+      <div style={{ background:"#111", borderBottom:"1px solid "+C.border,
+        padding:"10px 20px", display:"flex", gap:20 }}>
+        {[
+          { label:"Total",    value:stats.total,    color:C.accent },
+          { label:"Complete", value:stats.complete, color:C.success },
+          { label:"Overdue",  value:stats.overdue,  color:C.danger },
+          { label:"Due Soon", value:stats.dueSoon,  color:C.warning },
+          { label:"My Tasks", value:myTasks.length, color:"#a78bfa" },
+        ].map(s=>(
+          <div key={s.label} style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:18, fontWeight:900, color:s.color }}>{s.value}</span>
+            <span style={{ fontSize:11, color:C.text3 }}>{s.label}</span>
           </div>
-        )}
+        ))}
+      </div>
 
-        {/* ── My Tasks ── */}
-        {view === "tasks" && (
-          <div>
-            <h2 style={{ fontFamily:"Georgia,serif", fontSize:20, fontWeight:900,
-              color:"#0f172a", marginBottom:20 }}>
-              My Tasks — {currentUser?.name || currentUser?.email}
-            </h2>
-            {myTasks.length === 0 ? (
-              <div style={{ background:"#fff", borderRadius:12, border:"1px solid #e2e8f0",
-                padding:48, textAlign:"center" }}>
-                <div style={{ fontSize:40, marginBottom:12 }}>✓</div>
-                <p style={{ fontSize:15, fontWeight:700, color:"#0f172a" }}>All caught up!</p>
-                <p style={{ fontSize:13, color:"#64748b" }}>No pending tasks assigned to you.</p>
-              </div>
-            ) : myTasks.map(task => (
-              <div key={task.stepId}
-                style={{ background:"#fff", borderRadius:10, border:"1px solid #e2e8f0",
-                  padding:"14px 18px", marginBottom:10,
-                  display:"flex", alignItems:"center", gap:12 }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:700, fontSize:13, color:"#0f172a", marginBottom:2 }}>
-                    {task.stepName}
-                  </div>
-                  <div style={{ fontSize:11, color:"#64748b" }}>
-                    {task.company?.name} &middot; {task.filing?.filingType} &middot; {task.filing?.year}
-                  </div>
-                </div>
-                <DaysBadge days={daysUntil(task.filing?.dueDate)}/>
-                <Badge status={task.status}/>
-                <button onClick={() => { setSelected(task.company); setView("dashboard"); }}
-                  style={{ background:"#f1f5f9", color:"#475569", border:"none",
-                    borderRadius:7, padding:"5px 10px", fontSize:11,
-                    fontWeight:700, cursor:"pointer" }}>
-                  Open →
-                </button>
-              </div>
+      {/* Main content */}
+      <div style={{ display:"flex", height:"calc(100vh - 104px)" }}>
+
+        {/* Company list */}
+        <div style={{ flex:1, overflowY:"auto", transition:"all 0.3s" }}>
+          {/* Filters */}
+          <div style={{ padding:"12px 16px", borderBottom:"1px solid "+C.border,
+            display:"flex", gap:8, flexWrap:"wrap", alignItems:"center",
+            background:C.card, position:"sticky", top:0, zIndex:10 }}>
+            <div style={{ position:"relative", flex:"1 1 180px", maxWidth:240 }}>
+              <span style={{ position:"absolute", left:8, top:"50%",
+                transform:"translateY(-50%)", color:C.text3, fontSize:12 }}>🔍</span>
+              <input value={search} onChange={e=>setSearch(e.target.value)}
+                placeholder="Search companies..."
+                style={{ width:"100%", background:C.inputBg, border:"1px solid "+C.border2,
+                  borderRadius:7, color:C.text, padding:"6px 8px 6px 26px",
+                  fontSize:12, outline:"none", boxSizing:"border-box", fontFamily:"inherit" }}/>
+            </div>
+            {[
+              ["statusFilter",statusFilter,setStatusFilter,["All",...FILING_STATUSES,"No Filings","Overdue"],"Status"],
+              ["jurFilter",jurFilter,setJurFilter,jurOptions,"Jurisdiction"],
+              ["typeFilter",typeFilter,setTypeFilter,["All",...ALL_FILING_TYPES],"Filing Type"],
+            ].map(([key,val,setter,opts,label])=>(
+              <select key={key} value={val} onChange={e=>setter(e.target.value)}
+                style={{ background:C.inputBg, border:"1px solid "+C.border2, borderRadius:7,
+                  color:C.text, padding:"6px 9px", fontSize:12, outline:"none" }}>
+                {opts.map(o=><option key={o} value={o}>{o==="All"?label+": All":o}</option>)}
+              </select>
+            ))}
+            <span style={{ fontSize:11, color:C.text3, marginLeft:"auto" }}>
+              {visibleCompanies.length} companies
+            </span>
+          </div>
+
+          {/* Column headers */}
+          <div style={{ display:"grid",
+            gridTemplateColumns: panelOpen ? "2fr 1fr 1fr 100px" : "2fr 1fr 1fr 1fr 120px 100px",
+            padding:"7px 16px", background:"#111", borderBottom:"1px solid "+C.border,
+            position:"sticky", top:53, zIndex:9 }}>
+            {(panelOpen
+              ? ["Company","Jurisdiction","Status","Next"]
+              : ["Company","Jurisdiction","Filing Types","Status","Next Responsible","Actions"]
+            ).map(h=>(
+              <span key={h} style={{ fontSize:10, fontWeight:900, color:C.text3,
+                textTransform:"uppercase", letterSpacing:"0.07em" }}>{h}</span>
             ))}
           </div>
+
+          {/* Rows */}
+          {visibleCompanies.length===0 ? (
+            <div style={{ padding:48, textAlign:"center", color:C.text3, fontSize:13 }}>
+              No companies match your filters.
+            </div>
+          ) : visibleCompanies.map(c=>{
+            const ws = getWorstStatus(c.name);
+            const next = getNextResponsible(c.name, filings, yearFilter, users);
+            const isSelected = selectedCo?.name===c.name;
+            const rowBg = isSelected ? "#1e1b4b" : "transparent";
+
+            return (
+              <div key={c.name}
+                onClick={()=>setSelectedCo(isSelected?null:c)}
+                style={{ display:"grid",
+                  gridTemplateColumns:panelOpen?"2fr 1fr 1fr 100px":"2fr 1fr 1fr 1fr 120px 100px",
+                  padding:"10px 16px", borderBottom:"1px solid "+C.border,
+                  cursor:"pointer", background:rowBg, transition:"background 0.1s" }}
+                onMouseEnter={e=>{ if(!isSelected) e.currentTarget.style.background=C.card2; }}
+                onMouseLeave={e=>{ if(!isSelected) e.currentTarget.style.background="transparent"; }}>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:13, color:C.text }}>{c.name}</div>
+                  {c.clientEmail && <div style={{ fontSize:11, color:C.text3 }}>{c.clientEmail}</div>}
+                </div>
+                <div style={{ fontSize:12, color:C.text2, display:"flex", alignItems:"center" }}>
+                  {c.jurisdiction}
+                </div>
+                {!panelOpen && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:3, justifyContent:"center" }}>
+                    {getFilingTypes(c.jurisdiction).map(ft=>(
+                      <span key={ft} style={{ fontSize:10, background:C.card2, color:C.text3,
+                        borderRadius:4, padding:"1px 6px", display:"inline-block" }}>{ft}</span>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display:"flex", alignItems:"center" }}>
+                  <Badge status={ws}/>
+                </div>
+                {!panelOpen && (
+                  <div style={{ display:"flex", flexDirection:"column", justifyContent:"center" }}>
+                    {next ? (
+                      <>
+                        <span style={{ fontSize:12, fontWeight:700, color:C.accent }}>{next.name}</span>
+                        <span style={{ fontSize:10, color:C.text3,
+                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                          maxWidth:110 }}>{next.step}</span>
+                      </>
+                    ) : ws==="Complete" ? (
+                      <span style={{ fontSize:11, color:C.success }}>Complete ✓</span>
+                    ) : (
+                      <span style={{ fontSize:11, color:C.text3 }}>Unassigned</span>
+                    )}
+                  </div>
+                )}
+                {!panelOpen && (
+                  <div style={{ display:"flex", alignItems:"center" }}>
+                    <span style={{ fontSize:11, color:C.accent }}>View →</span>
+                  </div>
+                )}
+                {panelOpen && (
+                  <div style={{ display:"flex", flexDirection:"column", justifyContent:"center" }}>
+                    {next ? (
+                      <span style={{ fontSize:11, fontWeight:700, color:C.accent }}>{next.name}</span>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Side Panel */}
+        {selectedCo && (
+          <SidePanel
+            company={selectedCo}
+            filings={filings}
+            users={users}
+            isAdmin={isAdmin}
+            currentUserEmail={currentUser?.email}
+            yearFilter={yearFilter}
+            onClose={()=>setSelectedCo(null)}
+            updateFiling={updateFiling}
+          />
         )}
       </div>
 
+      {/* Year Manager Modal */}
+      {yearMgr && (
+        <YearManager
+          companies={companies}
+          filings={filings}
+          setFilings={setFilings}
+          yearFilter={yearFilter}
+          setYearFilter={setYearFilter}
+          onClose={()=>setYearMgr(false)}
+          showToast={showToast}/>
+      )}
+
+      {/* Toast */}
       {toast && (
         <div style={{ position:"fixed", bottom:20, right:20, zIndex:9999,
-          background: toast.type === "error" ? "#ef4444" : "#10b981",
-          color:"#fff", borderRadius:10, padding:"10px 18px", fontSize:13,
-          fontWeight:700, boxShadow:"0 4px 20px rgba(0,0,0,0.2)" }}>
+          background:toast.type==="error"?C.danger:C.success,
+          color:"#fff", borderRadius:10, padding:"10px 18px",
+          fontSize:13, fontWeight:700, boxShadow:"0 4px 20px rgba(0,0,0,0.4)" }}>
           {toast.msg}
         </div>
       )}
-      <style>{`@keyframes spin { to { transform:rotate(360deg); } } * { box-sizing:border-box; }`}</style>
+
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}`}</style>
     </div>
   );
 }
-
