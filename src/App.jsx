@@ -37,32 +37,57 @@ const DEFAULT_STEPS = {
   "Economic Substance": [
     "Send Google Form link to client",
     "Client submitted form",
-    "Prepare Economic Substance filing",
-    "Filing submitted",
+    "Prepare Economic Substance declaration",
+    "Declaration filed",
+  ],
+  "Economic Substance BVI": [
+    "Send Google Form link to client",
+    "Client submitted form",
+    "Prepare Economic Substance declaration",
+    "Declaration filed",
+    "Financial Reports filed",
+  ],
+  "Economic Substance Panama": [
+    "Send Google Form link to client",
+    "Client submitted form",
+    "Prepare Economic Substance declaration",
+    "Declaration filed",
+    "Financial Reports filed",
   ],
   "Annual Return": [
     "Send balance sheet request to client",
     "Balance sheet received from client",
     "Prepare Annual Financial Report (AFR)",
     "AFR submitted",
+    "Financial Reports filed",
   ],
   "Tax Return": [
-    "Send Information Request Letter",
+    "Send Information request Letter",
     "Bank Statements received",
-    "Mortgage statement received",
+    "Mortgage statement Received",
     "Property Management Statement received",
-    "HUD received (if new purchase made)",
+    "HUD Received (if new purchase made)",
     "Information on Financial Transactions with Shareholders",
-    "Property Tax Information received",
+    "Property Tax Information Received",
     "Prepare Bookkeeping",
     "Upload reports",
-    "Fernando prepared Tax Return",
+    "Fernando prepared Tax return",
     "Sent Return to client for signature",
-    "Received signed return forms from client",
-    "Send signed returns to Fernando",
+    "Received signed returns forms from client",
+    "Send sign returns to Fernando",
     "Return Filed",
   ],
 };
+
+function getSteps(filingType, jurisdiction) {
+  var j = (jurisdiction || "").toLowerCase();
+  if (filingType === "Economic Substance") {
+    if (j.includes("bvi") || j.includes("british virgin")) return DEFAULT_STEPS["Economic Substance BVI"];
+    if (j.includes("panama")) return DEFAULT_STEPS["Economic Substance Panama"];
+  }
+  return DEFAULT_STEPS[filingType] || [];
+}
+
 
 const EMAIL_TEMPLATES = {
   "Economic Substance": {
@@ -437,7 +462,7 @@ function StepRow({ step, users, isAdmin, currentUserEmail, onUpdate }) {
 // ─── Filing Card ──────────────────────────────────────────────────────────────
 function FilingCard({ filing, company, users, isAdmin, currentUserEmail, onUpdate, onEmail }) {
   const [steps,       setSteps]       = useState(filing.steps||[]);
-  const [expanded,    setExpanded]    = useState(false);
+  const [expanded,    setExpanded]    = useState(true);
   const [filingStatus,setFilingStatus]= useState(filing.status||"Not Started");
   const days = daysUntil(filing.dueDate);
   const done = steps.filter(s=>s.status==="Done").length;
@@ -512,7 +537,7 @@ function YearManager({ companies, filings, setFilings, yearFilter, setYearFilter
       const existing = (filings[c.name]||[]).filter(f=>String(f.year)===newYear).map(f=>f.filingType);
       const toCreate = types.filter(ft=>!existing.includes(ft));
       for (const ft of toCreate) {
-        const steps = (DEFAULT_STEPS[ft]||[]).map((name,i)=>({
+        const steps = getSteps(ft, c.jurisdiction).map((name,i)=>({
           stepId:"s_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,6),
           stepName:name, assignedTo:"", status:"Pending", notes:"", completedAt:"", order:i
         }));
