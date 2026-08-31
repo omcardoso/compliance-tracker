@@ -403,9 +403,10 @@ function StepRow({ step, users, isAdmin, currentUserEmail, onUpdate }) {
           {step.stepName}
         </span>
         {step.assignedTo && (
-          <span style={{ fontSize:10, color:C.accent, fontWeight:700,
-            background:"#1e1b4b", borderRadius:6, padding:"2px 7px" }}>
-            {(users.find(u=>u.email===step.assignedTo)||{}).name?.split(" ")[0] || step.assignedTo.split("@")[0]}
+          <span style={{ fontSize:10, fontWeight:700, borderRadius:6, padding:"2px 7px",
+            color: step.assignedTo==="__client__" ? "#34d399" : C.accent,
+            background: step.assignedTo==="__client__" ? "#052e16" : "#1e1b4b" }}>
+            {step.assignedTo==="__client__" ? "Client" : ((users.find(u=>u.email===step.assignedTo)||{}).name?.split(" ")[0] || step.assignedTo.split("@")[0])}
           </span>
         )}
         {!editing && <Badge status={step.status||"Pending"}/>}
@@ -431,6 +432,7 @@ function StepRow({ step, users, isAdmin, currentUserEmail, onUpdate }) {
                   textTransform:"uppercase", display:"block", marginBottom:3 }}>Assign to</label>
                 <select value={assignedTo} onChange={e=>setAssignedTo(e.target.value)} style={selStyle}>
                   <option value="">Unassigned</option>
+                  <option value="__client__">Client</option>
                   {users.map(u=><option key={u.id} value={u.email}>{u.name}</option>)}
                 </select>
               </div>
@@ -737,6 +739,136 @@ function SidePanel({ company, filings, users, isAdmin, currentUserEmail, yearFil
   );
 }
 
+// ─── Email Blast Modal ───────────────────────────────────────────────────────
+function EmailBlastModal({ companies, filings, yearFilter, onClose }) {
+  const taxYear = String(parseInt(yearFilter) - 1);
+
+  // Find all companies that have Client-assigned pending steps
+  const clientPending = companies.flatMap(c => {
+    const cos = (filings[c.name]||[]).filter(f =>
+      String(f.year)===yearFilter && f.filingType!=="__notes__"
+    );
+    const clientSteps = cos.flatMap(f =>
+      (f.steps||[]).filter(s => s.assignedTo==="__client__" && s.status!=="Done")
+        .map(s => ({ company:c, filing:f, step:s }))
+    );
+    return clientSteps;
+  });
+
+  // Group by company+filing to send one email per filing
+  const emailGroups = {};
+  clientPending.forEach(({ company, filing, step }) => {
+    const key = company.name + "||" + filing.filingId;
+    if (!emailGroups[key]) {
+      emailGroups[key] = { company, filing, steps:[], to:company.clientEmail||"" };
+    }
+    emailGroups[key].steps.push(step);
+  });
+  const groups = Object.values(emailGroups);
+
+  const [sending,   setSending]   = useState(false);
+  const [sent,      setSent]      = useState(0);
+  const [done,      setDone]      = useState(false);
+  const [editTo,    setEditTo]    = useState({});
+
+  const getTmpl = (g) => {
+    const tmpl = EMAIL_TEMPLATES[g.filing.filingType] || {};
+    const vars = { companyName:g.company.name, jurisdiction:g.company.jurisdiction||"",
+      registrationNumber:g.company.registrationNumber||"", year:taxYear };
+    return { subject:fill(tmpl.subject||"",vars), body:fill(tmpl.body||"",vars) };
+  };
+
+  const sendAll = async () => {
+    setSending(true);
+    let count = 0;
+    for (const g of groups) {
+      const to = editTo[g.filing.filingId] || g.to;
+      if (!to) continue;
+      const { subject, body } = getTmpl(g);
+      try {
+        await apiWrite({ action:"sendComplianceEmail", to, subject, body });
+        count++;
+        setSent(count);
+      } catch(e) {}
+    }
+    setDone(true);
+    setSending(false);
+  };
+
+  return (
+    <Modal title={"Email Clients — Tax Year " + taxYear} onClose={onClose} width={720}>
+      {done ? (
+        <div style={{ textAlign:"center", padding:40 }}>
+          <div style={{ fontSize:48, marginBottom:12 }}>✓</div>
+          <p style={{ fontSize:15, fontWeight:700, color:C.success }}>{sent} emails sent successfully</p>
+        </div>
+      ) : groups.length === 0 ? (
+        <div style={{ textAlign:"center", padding:40 }}>
+          <div style={{ fontSize:40, marginBottom:12 }}>✓</div>
+          <p style={{ fontSize:14, fontWeight:700, color:C.text }}>No pending client steps</p>
+          <p style={{ fontSize:12, color:C.text3, marginTop:8 }}>
+            Assign steps to "Client" to include them in the email blast.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <div style={{ background:C.card2, borderRadius:9, padding:"10px 14px",
+            marginBottom:16, fontSize:12, color:C.text3, border:"1px solid "+C.border }}>
+            <span style={{ color:C.text, fontWeight:700 }}>{groups.length} emails</span> will be sent
+            to clients with pending action items for Tax Year {taxYear}.
+            Each client receives one email per filing type.
+          </div>
+          {groups.map(g => {
+            const to = editTo[g.filing.filingId] !== undefined
+              ? editTo[g.filing.filingId] : (g.to||"");
+            return (
+              <div key={g.filing.filingId}
+                style={{ background:C.card2, borderRadius:9, padding:12,
+                  marginBottom:10, border:"1px solid "+C.border }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontWeight:700, fontSize:13, color:C.text }}>{g.company.name}</div>
+                    <div style={{ fontSize:11, color:C.text3 }}>{g.filing.filingType} &middot; {g.steps.length} pending step{g.steps.length>1?"s":""}</div>
+                  </div>
+                  <Badge status={g.filing.status}/>
+                </div>
+                <div style={{ marginBottom:6 }}>
+                  <label style={{ fontSize:10, fontWeight:800, color:C.text3,
+                    textTransform:"uppercase", display:"block", marginBottom:3 }}>To</label>
+                  <input value={to}
+                    onChange={e => setEditTo(prev=>({...prev,[g.filing.filingId]:e.target.value}))}
+                    placeholder="Client email address"
+                    style={{ width:"100%", background:C.inputBg, border:"1px solid "+C.border2,
+                      borderRadius:7, color:C.text, padding:"5px 8px", fontSize:12,
+                      fontFamily:"inherit", outline:"none", boxSizing:"border-box",
+                      borderColor: to ? C.border2 : C.danger }}/>
+                  {!to && <div style={{ fontSize:10, color:C.danger, marginTop:2 }}>No email address — will be skipped</div>}
+                </div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                  {g.steps.map(s => (
+                    <span key={s.stepId} style={{ fontSize:10, background:"#1e293b",
+                      color:"#94a3b8", borderRadius:5, padding:"1px 7px" }}>
+                      {s.stepName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:16 }}>
+            <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+            <Btn onClick={sendAll} disabled={sending||groups.every(g=>!(editTo[g.filing.filingId]||g.to))}>
+              {sending
+                ? <><Spinner size={13} color="#fff"/>Sending {sent}/{groups.length}...</>
+                : "Send " + groups.length + " Email" + (groups.length>1?"s":"")}
+            </Btn>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const { user: clerkUser } = useUser();
@@ -754,6 +886,9 @@ export default function App() {
   const [selectedCo,   setSelectedCo]   = useState(null);
   const [toast,        setToast]        = useState(null);
   const [yearMgr,      setYearMgr]      = useState(false);
+  const [sortBy,       setSortBy]       = useState("name");
+  const [sortDir,      setSortDir]      = useState("asc");
+  const [emailBlast,   setEmailBlast]   = useState(false);
 
   const isAdmin = currentUser && (
     ADMIN_EMAILS.includes((currentUser.email||"").toLowerCase()) ||
@@ -814,6 +949,13 @@ export default function App() {
   // Jurisdiction options
   const jurOptions = ["All", ...new Set(companies.map(c=>c.jurisdiction).filter(Boolean))].sort();
 
+  const sortCol = (col) => {
+    if (sortBy === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortBy(col); setSortDir("asc"); }
+  };
+
+  const sortIcon = (col) => sortBy === col ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕";
+
   const getWorstStatus = (name) => {
     const cos = (filings[name]||[]).filter(f=>String(f.year)===yearFilter&&f.filingType!=="__notes__");
     if (!cos.length) return "No Filings";
@@ -835,6 +977,12 @@ export default function App() {
     const ws = getWorstStatus(c.name);
     if (statusFilter==="No Filings") return ws==="No Filings";
     return ws===statusFilter;
+  })].sort((a, b) => {
+    let av, bv;
+    if (sortBy === "name")         { av = a.name||""; bv = b.name||""; }
+    else if (sortBy === "jurisdiction") { av = a.jurisdiction||""; bv = b.jurisdiction||""; }
+    else if (sortBy === "status")  { av = STATUS_ORDER[getWorstStatus(a.name)]??99; bv = STATUS_ORDER[getWorstStatus(b.name)]??99; return sortDir==="asc"?av-bv:bv-av; }
+    return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
   if (loading) return (
@@ -890,9 +1038,15 @@ export default function App() {
         </div>
 
         {isAdmin && (
-          <Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>
-            🗓 Manage Years
-          </Btn>
+          <>
+            <Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>
+              🗓 Manage Years
+            </Btn>
+            <Btn size="sm" variant="secondary" onClick={()=>setEmailBlast(true)}
+              style={{ color:"#34d399", borderColor:"#064e3b" }}>
+              📧 Email Clients
+            </Btn>
+          </>
         )}
 
         <UserButton/>
@@ -954,13 +1108,23 @@ export default function App() {
             gridTemplateColumns: panelOpen ? "1.8fr 0.8fr 0.9fr" : "2fr 1fr 1fr 1fr 120px 100px",
             padding:"7px 16px", background:"#111", borderBottom:"1px solid "+C.border,
             position:"sticky", top:53, zIndex:9 }}>
-            {(panelOpen
-              ? ["Company","Jurisdiction","Status","Next"]
-              : ["Company","Jurisdiction","Filing Types","Status","Next Responsible","Actions"]
-            ).map(h=>(
-              <span key={h} style={{ fontSize:10, fontWeight:900, color:C.text3,
-                textTransform:"uppercase", letterSpacing:"0.07em" }}>{h}</span>
-            ))}
+            {panelOpen ? (
+              <>
+                <span onClick={()=>sortCol("name")} style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em", cursor:"pointer" }}>Company{sortIcon("name")}</span>
+                <span onClick={()=>sortCol("jurisdiction")} style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em", cursor:"pointer" }}>Jurisdiction{sortIcon("jurisdiction")}</span>
+                <span onClick={()=>sortCol("status")} style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em", cursor:"pointer" }}>Status{sortIcon("status")}</span>
+                <span style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em" }}>Next</span>
+              </>
+            ) : (
+              <>
+                <span onClick={()=>sortCol("name")} style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em", cursor:"pointer" }}>Company{sortIcon("name")}</span>
+                <span onClick={()=>sortCol("jurisdiction")} style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em", cursor:"pointer" }}>Jurisdiction{sortIcon("jurisdiction")}</span>
+                <span style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em" }}>Filing Types</span>
+                <span onClick={()=>sortCol("status")} style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em", cursor:"pointer" }}>Status{sortIcon("status")}</span>
+                <span style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em" }}>Next Responsible</span>
+                <span style={{ fontSize:10, fontWeight:900, color:C.text3, textTransform:"uppercase", letterSpacing:"0.07em" }}>Actions</span>
+              </>
+            )}
           </div>
 
           {/* Rows */}
@@ -1050,6 +1214,13 @@ export default function App() {
       </div>
 
       {/* Year Manager Modal */}
+      {emailBlast && (
+        <EmailBlastModal
+          companies={companies}
+          filings={filings}
+          yearFilter={yearFilter}
+          onClose={()=>setEmailBlast(false)}/>
+      )}
       {yearMgr && (
         <YearManager
           companies={companies}
