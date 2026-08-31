@@ -966,7 +966,7 @@ export default function App() {
     return "Not Started";
   };
 
-  const visibleCompanies = companies.filter(c=>{
+  const visibleCompanies = [...companies.filter(c=>{
     if (search && !c.name?.toLowerCase().includes(search.toLowerCase())) return false;
     if (jurFilter!=="All" && c.jurisdiction!==jurFilter) return false;
     if (typeFilter!=="All") {
