@@ -832,7 +832,7 @@ export default function App() {
         {[{v:stats.total,l:"Total",c:"#818cf8"},{v:stats.complete,l:"Complete",c:"#34d399"},{v:stats.overdue,l:"Overdue",c:"#f87171"},{v:stats.dueSoon,l:"Due Soon",c:"#fbbf24"},{v:myTasks.length,l:"My Tasks",c:"#a78bfa"}].map(s=>(
           <React.Fragment key={s.l}><span style={{fontSize:16,fontWeight:900,color:s.c}}>{s.v}</span><span style={{fontSize:10,color:C.text3,marginRight:14}}>{s.l}</span></React.Fragment>
         ))}
-      </div>
+      </div>}
 
       {view!=="users" && <div style={{display:"flex",height:"calc(100vh - 104px)"}}>
         <div style={{flex:1,overflowY:"auto",minWidth:0}}>
