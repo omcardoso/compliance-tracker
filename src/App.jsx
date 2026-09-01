@@ -284,7 +284,7 @@ function StepRow({step,users,isAdmin,currentUserEmail,onUpdate,onDelete}) {
 }
 
 // ─── Filing Card ──────────────────────────────────────────────────────────────
-function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEmail,templates}) {
+function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEmail,templates,onUpdateTemplate}) {
   const [steps,setSteps]=useState(filing.steps||[]);
   const [expanded,setExpanded]=useState(true);
   const [filingStatus,setFilingStatus]=useState(filing.status||"Not Started");
@@ -330,6 +330,7 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
     if(scope==="permanent"){
       const tmplSteps=[...getCurrentTemplateSteps(),name];
       await fbSaveTemplate(templateKey,tmplSteps);
+      if(onUpdateTemplate) onUpdateTemplate(templateKey,tmplSteps);
     }
     setScopeModal(null);
   };
@@ -350,6 +351,7 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
     if(scope==="permanent"){
       const tmplSteps=getCurrentTemplateSteps().filter(s=>s!==stepName);
       await fbSaveTemplate(templateKey,tmplSteps);
+      if(onUpdateTemplate) onUpdateTemplate(templateKey,tmplSteps);
     }
     setScopeModal(null);
   };
@@ -522,7 +524,7 @@ function EmailBlastModal({companies,filings,yearFilter,onClose}) {
 }
 
 // ─── Side Panel ───────────────────────────────────────────────────────────────
-function SidePanel({company,filings,users,isAdmin,currentUserEmail,yearFilter,onClose,updateFiling,templates}) {
+function SidePanel({company,filings,users,isAdmin,currentUserEmail,yearFilter,onClose,updateFiling,templates,onUpdateTemplate}) {
   const [emailFiling,setEmailFiling]=useState(null);
   const [notes,setNotes]=useState("");
   const [notesSaved,setNotesSaved]=useState(false);
@@ -559,7 +561,8 @@ function SidePanel({company,filings,users,isAdmin,currentUserEmail,yearFilter,on
         :realFilings.map(filing=>(
           <FilingCard key={filing.filingId} filing={filing} company={company} users={users}
             isAdmin={isAdmin} currentUserEmail={currentUserEmail} templates={templates}
-            onUpdate={f=>updateFiling(company.name,f)} onEmail={f=>setEmailFiling(f)}/>
+            onUpdate={f=>updateFiling(company.name,f)} onEmail={f=>setEmailFiling(f)}
+            onUpdateTemplate={onUpdateTemplate}/>
         ))}
       </div>
       {emailFiling&&<EmailModal filing={emailFiling} company={company} onClose={()=>setEmailFiling(null)}/>}
@@ -592,6 +595,7 @@ export default function App() {
   const isAdmin=currentUser&&(ADMIN_EMAILS.includes((currentUser.email||"").toLowerCase())||currentUser.role==="admin"||currentUser.role==="editor");
   const taxYear=String(parseInt(yearFilter)-1);
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
+  const updateTemplate=(key,steps)=>{setTemplates(prev=>({...prev,[key]:steps}));};
   const sortCol=col=>{if(sortBy===col)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortBy(col);setSortDir("asc");}};
   const sortIcon=col=>sortBy===col?(sortDir==="asc"?" ▲":" ▼"):" ↕";
 
@@ -738,7 +742,7 @@ export default function App() {
           })}
         </div>
 
-        {selectedCo&&<SidePanel company={selectedCo} filings={filings} users={users} isAdmin={isAdmin} currentUserEmail={currentUser?.email} yearFilter={yearFilter} onClose={()=>setSelectedCo(null)} updateFiling={updateFiling} templates={templates}/>}
+        {selectedCo&&<SidePanel company={selectedCo} filings={filings} users={users} isAdmin={isAdmin} currentUserEmail={currentUser?.email} yearFilter={yearFilter} onClose={()=>setSelectedCo(null)} updateFiling={updateFiling} templates={templates} onUpdateTemplate={updateTemplate}/>}
       </div>
 
       {emailBlast&&<EmailBlastModal companies={companies} filings={filings} yearFilter={yearFilter} onClose={()=>setEmailBlast(false)}/>}
