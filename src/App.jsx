@@ -823,7 +823,7 @@ export default function App() {
           </select>
           <span style={{fontSize:11,color:C.text3,background:C.card2,border:"1px solid "+C.border,borderRadius:6,padding:"3px 9px",whiteSpace:"nowrap"}}>Tax Year <span style={{color:"#818cf8",fontWeight:800}}>{taxYear}</span></span>
         </div>
-        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setEmailBlast(true)} style={{color:"#34d399",borderColor:"#064e3b"}}>📧 Email Clients</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}<//>}
+        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setEmailBlast(true)} style={{color:"#34d399",borderColor:"#064e3b"}}>📧 Email Clients</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}</>}
         <UserButton/>
       </div>
 
