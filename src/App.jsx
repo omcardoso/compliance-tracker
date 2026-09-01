@@ -1245,8 +1245,8 @@ export default function App() {
                     e.stopPropagation();
                     const types=getFilingTypes(c.jurisdiction);
                     for(const ft of types){
-                      const stepNames=getStepsFromTemplates(ft,c.jurisdiction,templates);
-                      const steps=stepNames.map((name,i)=>({stepId:uid(),stepName:name,assignedTo:"",status:"Pending",notes:"",completedAt:"",order:i}));
+                      const stepDefs=getStepsFromTemplates(ft,c.jurisdiction,templates);
+                      const steps=stepDefs.map((s,i)=>({stepId:uid(),stepName:typeof s==="string"?s:s.name,assignedTo:typeof s==="string"?"":s.assignedTo||"",status:"Pending",notes:"",completedAt:"",order:i}));
                       const f={filingId:uid(),companyName:c.name,jurisdiction:c.jurisdiction,filingType:ft,year:parseInt(yearFilter),status:"Not Started",dueDate:getDueDate(ft,parseInt(yearFilter)),steps,yearNotes:""};
                       await fbSaveFiling(f);updateFiling(c.name,f);
                     }
