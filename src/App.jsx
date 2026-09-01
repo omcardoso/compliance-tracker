@@ -895,6 +895,7 @@ export default function App() {
         {selectedCo&&<SidePanel company={selectedCo} filings={filings} users={users} isAdmin={isAdmin} currentUserEmail={currentUser?.email} yearFilter={yearFilter} onClose={()=>setSelectedCo(null)} updateFiling={updateFiling} templates={templates} onUpdateTemplate={updateTemplate}/>}
       </div>
 
+      </>
       }
       {emailBlast&&<EmailBlastModal companies={companies} filings={filings} yearFilter={yearFilter} onClose={()=>setEmailBlast(false)}/>}
       {yearMgr&&<YearManager companies={companies} filings={filings} setFilings={setFilings} yearFilter={yearFilter} setYearFilter={setYearFilter} onClose={()=>setYearMgr(false)} showToast={showToast} templates={templates} isOctavio={isOctavio}/>}
