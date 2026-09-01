@@ -1101,7 +1101,7 @@ function SettingsPage({settings, setSettings, showToast, emailTemplates, setEmai
           ))}
         </div>
         <p style={{fontSize:10,color:C.text3,marginBottom:16}}>
-          <strong style={{color:"#fcd34d"}}>{{pendingItems}}</strong> — automatically replaced with a bullet list of uncompleted client steps for each company.
+          <strong style={{color:"#fcd34d"}}>{"{{pendingItems}}"}</strong> — automatically replaced with a bullet list of uncompleted client steps for each company.
         </p>
         {["Tax Return","Economic Substance","Annual Return"].map(type=>(
           <div key={type} style={{marginBottom:16,padding:14,background:C.card2,
