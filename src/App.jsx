@@ -425,10 +425,10 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
               onDragLeave={handleDragLeave}
               onDrop={e=>handleDrop(e,step)}
               style={{
-                opacity:dragIdRef.current===step.stepId?0.4:1,
                 borderTop:dragOverId===step.stepId?"2px solid "+C.accent:"2px solid transparent",
                 transition:"border-color 0.1s",
-                cursor:isAdmin?"grab":"default"
+                cursor:isAdmin?"grab":"default",
+                background:dragOverId===step.stepId?"#1e1b4b":"transparent"
               }}>
               <StepRow step={step} users={users} isAdmin={isAdmin}
                 currentUserEmail={currentUserEmail} onUpdate={updateStep} onDelete={handleDeleteStep}/>
@@ -753,7 +753,7 @@ export default function App() {
     setLoading(true);
     try{
       const email=(clerkUser.primaryEmailAddress?.emailAddress||"").toLowerCase();
-      const [cd,ud,filingDocs,tmpl]=await Promise.all([apiRead("getCompanies"),apiRead("getUsers"),fbGetFilings(yearFilter),fbGetTemplates()]);
+      const [cd,ud,filingDocs,tmpl]=await Promise.all([apiRead("getCompanies"),apiRead("getUsers"),fbGetFilings(),fbGetTemplates()]);
       const ul=ud.users||[];
       setCurrentUser(ul.find(u=>(u.email||"").toLowerCase()===email)||{email,role:"viewer",name:clerkUser.fullName||email});
       setUsers(ul);setCompanies(cd.companies||[]);setTemplates(tmpl);
@@ -761,7 +761,7 @@ export default function App() {
       setFilings(fm);
     }catch(e){setError(e.message);}
     setLoading(false);
-  },[clerkUser,yearFilter]);
+  },[clerkUser]);
 
   useEffect(()=>{if(clerkUser)loadData();},[clerkUser,loadData]);
 
