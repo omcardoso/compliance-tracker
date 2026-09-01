@@ -287,6 +287,8 @@ function StepRow({step,users,isAdmin,currentUserEmail,onUpdate,onDelete}) {
   const [hovered,setHovered]=useState(false);
   const canEdit=isAdmin||currentUserEmail===step.assignedTo;
   const isDone=step.status==="Done";
+  // Defensive: stepName might be an object if created with old buggy code
+  const stepName = typeof step.stepName==="string" ? step.stepName : (step.stepName?.name||"(unnamed step)");
   const sel={background:C.inputBg,border:"1px solid "+C.border2,borderRadius:7,color:C.text,padding:"5px 8px",fontSize:12,outline:"none",width:"100%"};
   const assignLabel=step.assignedTo==="__client__"?"Client":(users.find(u=>u.email===step.assignedTo)||{}).name?.split(" ")[0]||step.assignedTo?.split("@")[0];
 
@@ -300,7 +302,7 @@ function StepRow({step,users,isAdmin,currentUserEmail,onUpdate,onDelete}) {
         <div onClick={quickToggle} style={{width:18,height:18,borderRadius:4,flexShrink:0,cursor:canEdit?"pointer":"default",background:isDone?C.success:"transparent",border:"2px solid "+(isDone?C.success:C.border2),display:"flex",alignItems:"center",justifyContent:"center"}}>
           {isDone&&<span style={{color:"#fff",fontSize:10,fontWeight:900}}>✓</span>}
         </div>
-        <span style={{flex:1,fontSize:12,fontWeight:600,color:isDone?C.text3:C.text,textDecoration:isDone?"line-through":"none"}}>{step.stepName}</span>
+        <span style={{flex:1,fontSize:12,fontWeight:600,color:isDone?C.text3:C.text,textDecoration:isDone?"line-through":"none"}}>{stepName}</span>
         {step.assignedTo&&<span style={{fontSize:10,fontWeight:700,borderRadius:6,padding:"2px 7px",color:step.assignedTo==="__client__"?"#34d399":C.accent,background:step.assignedTo==="__client__"?"#052e16":"#1e1b4b"}}>{assignLabel}</span>}
         {!editing&&<Badge status={step.status||"Pending"}/>}
         {canEdit&&!editing&&<button onClick={()=>setEditing(true)} style={{background:"none",border:"none",cursor:"pointer",color:C.text3,fontSize:14,padding:"0 3px"}}>✏</button>}
@@ -1112,6 +1114,12 @@ export default function App() {
   const sortCol=col=>{if(sortBy===col)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortBy(col);setSortDir("asc");}};
   const sortIcon=col=>sortBy===col?(sortDir==="asc"?" ▲":" ▼"):" ↕";
 
+  const cleanSteps = (steps) => (steps||[]).map(s => ({
+    ...s,
+    stepName:   typeof s.stepName==="string"   ? s.stepName   : (s.stepName?.name  ||"(unnamed step)"),
+    assignedTo: typeof s.assignedTo==="string" ? s.assignedTo : "",
+  }));
+
   const loadData=useCallback(async()=>{
     if(!clerkUser)return;
     setLoading(true);
@@ -1121,7 +1129,12 @@ export default function App() {
       const ul=ud.users||[];
       setCurrentUser(ul.find(u=>(u.email||"").toLowerCase()===email)||{email,role:"viewer",name:clerkUser.fullName||email});
       setUsers(ul);setCompanies(cd.companies||[]);setTemplates(tmpl);
-      const fm={};filingDocs.forEach(f=>{if(!fm[f.companyName])fm[f.companyName]=[];fm[f.companyName].push(f);});
+      const fm={};
+      filingDocs.forEach(f=>{
+        const cleaned={...f,steps:cleanSteps(f.steps)};
+        if(!fm[f.companyName])fm[f.companyName]=[];
+        fm[f.companyName].push(cleaned);
+      });
       setFilings(fm);
     }catch(e){setError(e.message);}
     setLoading(false);
