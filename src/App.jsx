@@ -38,13 +38,62 @@ function getTemplateKey(filingType, jurisdiction) {
   }
   return filingType;
 }
+function getStepNames(filingType, jurisdiction) {
+  const key = getTemplateKey(filingType, jurisdiction);
+  const steps = DEFAULT_STEPS[key] || DEFAULT_STEPS[filingType] || [];
+  return steps.map(s => typeof s === "string" ? s : s.name);
+}
+
+// Step definitions with default assignments
+// assignedTo: "" = unassigned, "__client__" = client, email = specific user
+const OCTAVIO  = "omcardoso@gmail.com";
+const FERNANDO = "gataxservicescorp@gmail.com";
+const KARINA   = "meloatwork@gmail.com";
 
 const DEFAULT_STEPS = {
-  "Economic Substance": ["Send Google Form link to client","Client submitted form","Prepare Economic Substance declaration","Declaration filed"],
-  "Economic Substance_BVI": ["Send Google Form link to client","Client submitted form","Prepare Economic Substance declaration","Declaration filed","Financial Reports filed"],
-  "Economic Substance_Panama": ["Send Google Form link to client","Client submitted form","Prepare Economic Substance declaration","Declaration filed","Financial Reports filed"],
-  "Annual Return": ["Send balance sheet request to client","Balance sheet received from client","Prepare Annual Financial Report (AFR)","AFR submitted","Financial Reports filed"],
-  "Tax Return": ["Send Information request Letter","Bank Statements received","Mortgage statement Received","Property Management Statement received","HUD Received (if new purchase made)","Information on Financial Transactions with Shareholders","Property Tax Information Received","Prepare Bookkeeping","Upload reports","Fernando prepared Tax return","Sent Return to client for signature","Received signed returns forms from client","Send sign returns to Fernando","Return Filed"],
+  "Economic Substance": [
+    {name:"Send Google Form link to client", assignedTo:OCTAVIO},
+    {name:"Client submitted form",           assignedTo:"__client__"},
+    {name:"Prepare Economic Substance declaration", assignedTo:FERNANDO},
+    {name:"Declaration filed",               assignedTo:FERNANDO},
+  ],
+  "Economic Substance_BVI": [
+    {name:"Send Google Form link to client", assignedTo:OCTAVIO},
+    {name:"Client submitted form",           assignedTo:"__client__"},
+    {name:"Prepare Economic Substance declaration", assignedTo:FERNANDO},
+    {name:"Declaration filed",               assignedTo:FERNANDO},
+    {name:"Financial Reports filed",         assignedTo:FERNANDO},
+  ],
+  "Economic Substance_Panama": [
+    {name:"Send Google Form link to client", assignedTo:OCTAVIO},
+    {name:"Client submitted form",           assignedTo:"__client__"},
+    {name:"Prepare Economic Substance declaration", assignedTo:FERNANDO},
+    {name:"Declaration filed",               assignedTo:FERNANDO},
+    {name:"Financial Reports filed",         assignedTo:FERNANDO},
+  ],
+  "Annual Return": [
+    {name:"Send balance sheet request to client", assignedTo:OCTAVIO},
+    {name:"Balance sheet received from client",   assignedTo:"__client__"},
+    {name:"Prepare Annual Financial Report (AFR)",assignedTo:FERNANDO},
+    {name:"AFR submitted",                        assignedTo:FERNANDO},
+    {name:"Financial Reports filed",              assignedTo:FERNANDO},
+  ],
+  "Tax Return": [
+    {name:"Send Information request Letter",                      assignedTo:OCTAVIO},
+    {name:"Bank Statements received",                             assignedTo:"__client__"},
+    {name:"Mortgage statement Received",                          assignedTo:"__client__"},
+    {name:"Property Management Statement received",               assignedTo:"__client__"},
+    {name:"HUD Received (if new purchase made)",                  assignedTo:"__client__"},
+    {name:"Information on Financial Transactions with Shareholders", assignedTo:"__client__"},
+    {name:"Property Tax Information Received",                    assignedTo:"__client__"},
+    {name:"Prepare Bookkeeping",                                  assignedTo:OCTAVIO},
+    {name:"Upload reports",                                       assignedTo:OCTAVIO},
+    {name:"Fernando prepared Tax return",                         assignedTo:FERNANDO},
+    {name:"Sent Return to client for signature",                  assignedTo:KARINA},
+    {name:"Received signed returns forms from client",            assignedTo:"__client__"},
+    {name:"Send sign returns to Fernando",                        assignedTo:OCTAVIO},
+    {name:"Return Filed",                                         assignedTo:FERNANDO},
+  ],
 };
 
 const EMAIL_TEMPLATES = {
@@ -130,8 +179,9 @@ function getNextResponsible(companyName,filings,year,users) {
 }
 function getStepsFromTemplates(filingType,jurisdiction,templates) {
   const key=getTemplateKey(filingType,jurisdiction);
-  if(templates[key]) return templates[key];
-  if(templates[filingType]) return templates[filingType];
+  // Templates stored in Firestore are plain string arrays (user-customized)
+  if(templates[key]) return templates[key].map(s=>typeof s==="string"?{name:s,assignedTo:""}:s);
+  if(templates[filingType]) return templates[filingType].map(s=>typeof s==="string"?{name:s,assignedTo:""}:s);
   return DEFAULT_STEPS[key]||DEFAULT_STEPS[filingType]||[];
 }
 
@@ -320,9 +370,8 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
   const templateKey=getTemplateKey(filing.filingType,filing.jurisdiction);
 
   const getCurrentTemplateSteps=()=>{
-    if(templates[templateKey]) return templates[templateKey];
-    if(templates[filing.filingType]) return templates[filing.filingType];
-    return DEFAULT_STEPS[templateKey]||DEFAULT_STEPS[filing.filingType]||[];
+    const raw = templates[templateKey]||templates[filing.filingType]||DEFAULT_STEPS[templateKey]||DEFAULT_STEPS[filing.filingType]||[];
+    return raw.map(s=>typeof s==="string"?s:s.name);
   };
 
   const updateStep=async(updated)=>{
@@ -497,8 +546,8 @@ function YearManager({companies,filings,setFilings,yearFilter,setYearFilter,onCl
       const existing=(filings[c.name]||[]).filter(f=>String(f.year)===newYear).map(f=>f.filingType);
       const toCreate=types.filter(ft=>!existing.includes(ft));
       for(const ft of toCreate){
-        const stepNames=getStepsFromTemplates(ft,c.jurisdiction,templates);
-        const steps=stepNames.map((name,i)=>({stepId:uid(),stepName:name,assignedTo:"",status:"Pending",notes:"",completedAt:"",order:i}));
+        const stepDefs=getStepsFromTemplates(ft,c.jurisdiction,templates);
+        const steps=stepDefs.map((s,i)=>({stepId:uid(),stepName:typeof s==="string"?s:s.name,assignedTo:typeof s==="string"?"":s.assignedTo||"",status:"Pending",notes:"",completedAt:"",order:i}));
         const f={filingId:uid(),companyName:c.name,jurisdiction:c.jurisdiction,filingType:ft,year:parseInt(newYear),status:"Not Started",dueDate:getDueDate(ft,parseInt(newYear)),steps,yearNotes:""};
         await fbSaveFiling(f);created++;
         setProgress("Creating... "+created+" filings");
@@ -625,6 +674,321 @@ function SidePanel({company,filings,users,isAdmin,currentUserEmail,yearFilter,on
   );
 }
 
+
+// ─── Reports Page ─────────────────────────────────────────────────────────────
+function ReportsPage({companies, filings, users, yearFilter}) {
+  const taxYear = String(parseInt(yearFilter)-1);
+  const [groupBy,     setGroupBy]     = useState("company");
+  const [statusFilt,  setStatusFilt]  = useState("All");
+  const [typeFilt,    setTypeFilt]    = useState("All");
+  const [jurFilt,     setJurFilt]     = useState("All");
+  const [personFilt,  setPersonFilt]  = useState("All");
+
+  const OCTAVIO  = "omcardoso@gmail.com";
+  const FERNANDO = "gataxservicescorp@gmail.com";
+  const KARINA   = "meloatwork@gmail.com";
+
+  const getUserName = email => {
+    if(email==="__client__") return "Client";
+    if(!email) return "Unassigned";
+    const u = users.find(u=>u.email===email);
+    return u ? u.name : email.split("@")[0];
+  };
+
+  // Build flat list of all pending steps
+  const allSteps = Object.values(filings).flat()
+    .filter(f => String(f.year)===yearFilter && f.filingType!=="__notes__")
+    .flatMap(f => {
+      const co = companies.find(c=>c.name===f.companyName);
+      return (f.steps||[]).map(s=>({
+        ...s,
+        companyName:  f.companyName,
+        jurisdiction: f.jurisdiction || co?.jurisdiction || "",
+        filingType:   f.filingType,
+        dueDate:      f.dueDate,
+        clientEmail:  co?.clientEmail || "",
+      }));
+    });
+
+  const filtered = allSteps.filter(s => {
+    if(statusFilt!=="All" && statusFilt==="Pending/Active") {
+      if(s.status==="Done") return false;
+    } else if(statusFilt!=="All" && s.status!==statusFilt) return false;
+    if(typeFilt!=="All" && s.filingType!==typeFilt) return false;
+    if(jurFilt!=="All" && s.jurisdiction!==jurFilt) return false;
+    if(personFilt!=="All") {
+      if(personFilt==="Unassigned" && s.assignedTo) return false;
+      if(personFilt!=="Unassigned" && s.assignedTo!==personFilt) return false;
+    }
+    return true;
+  });
+
+  // Group
+  const grouped = filtered.reduce((acc, s) => {
+    let key;
+    if(groupBy==="company")      key = s.companyName;
+    else if(groupBy==="person")  key = getUserName(s.assignedTo);
+    else if(groupBy==="jurisdiction") key = s.jurisdiction || "Unknown";
+    else if(groupBy==="client")  key = s.clientEmail || "(no email)";
+    if(!acc[key]) acc[key]=[];
+    acc[key].push(s);
+    return acc;
+  }, {});
+
+  const jurOptions = ["All",...new Set(Object.values(filings).flat().map(f=>f.jurisdiction).filter(Boolean))].sort();
+  const personOptions = ["All","Unassigned",...users.map(u=>u.email),"__client__"];
+
+  const downloadCSV = () => {
+    const rows = [["Company","Jurisdiction","Filing Type","Step","Assigned To","Status","Due Date","Client Email"]];
+    filtered.forEach(s => rows.push([
+      s.companyName, s.jurisdiction, s.filingType, s.stepName,
+      getUserName(s.assignedTo), s.status, s.dueDate, s.clientEmail
+    ]));
+    const csv = rows.map(r=>r.map(v=>`"${(v||"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href=url; a.download="compliance-report-"+yearFilter+".csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const sel = {background:C.inputBg,border:"1px solid "+C.border2,borderRadius:7,color:C.text,padding:"6px 9px",fontSize:12,outline:"none",colorScheme:"dark"};
+  const statusColors = {"Done":C.success,"Pending":C.text3,"In Progress":"#93c5fd","Waiting Client":"#fcd34d"};
+
+  return (
+    <div style={{maxWidth:1100,margin:"0 auto",padding:24}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+        <h2 style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:900,color:C.text,flex:1}}>
+          Reports — Tax Year {taxYear}
+        </h2>
+        <button onClick={downloadCSV}
+          style={{background:"#052e16",color:"#34d399",border:"1px solid #065f46",borderRadius:7,
+            padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+          ⬇ Download CSV
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div style={{background:C.card,borderRadius:12,padding:14,border:"1px solid "+C.border,
+        marginBottom:20,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontSize:11,color:C.text3,fontWeight:700}}>Group by:</span>
+        {["company","person","jurisdiction","client"].map(g=>(
+          <button key={g} onClick={()=>setGroupBy(g)}
+            style={{background:groupBy===g?C.accent:C.card2,color:groupBy===g?"#fff":C.text2,
+              border:"1px solid "+(groupBy===g?C.accent:C.border2),borderRadius:6,
+              padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>
+            {g==="client"?"Client (Email)":g.charAt(0).toUpperCase()+g.slice(1)}
+          </button>
+        ))}
+        <span style={{color:C.border2}}>|</span>
+        <select value={statusFilt} onChange={e=>setStatusFilt(e.target.value)} style={sel}>
+          <option value="All">All Statuses</option>
+          <option value="Pending/Active">Pending / Active</option>
+          {["Pending","In Progress","Waiting Client","Done"].map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={typeFilt} onChange={e=>setTypeFilt(e.target.value)} style={sel}>
+          <option value="All">All Filing Types</option>
+          {["Tax Return","Economic Substance","Annual Return"].map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={jurFilt} onChange={e=>setJurFilt(e.target.value)} style={sel}>
+          {jurOptions.map(j=><option key={j} value={j}>{j==="All"?"All Jurisdictions":j}</option>)}
+        </select>
+        <select value={personFilt} onChange={e=>setPersonFilt(e.target.value)} style={sel}>
+          <option value="All">All People</option>
+          <option value="Unassigned">Unassigned</option>
+          <option value="__client__">Client</option>
+          {users.map(u=><option key={u.id} value={u.email}>{u.name}</option>)}
+        </select>
+        <span style={{fontSize:11,color:C.text3,marginLeft:"auto"}}>{filtered.length} steps</span>
+      </div>
+
+      {/* Groups */}
+      {Object.entries(grouped).sort(([a],[b])=>a.localeCompare(b)).map(([group,steps])=>(
+        <div key={group} style={{background:C.card,borderRadius:12,border:"1px solid "+C.border,
+          overflow:"hidden",marginBottom:14}}>
+          <div style={{padding:"10px 16px",background:C.card2,borderBottom:"1px solid "+C.border,
+            display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontWeight:800,fontSize:13,color:C.text,flex:1}}>{group}</span>
+            <span style={{fontSize:11,color:C.text3}}>{steps.length} step{steps.length!==1?"s":""}</span>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead>
+                <tr style={{background:"#111"}}>
+                  {["Company","Jurisdiction","Filing","Step","Assigned","Status","Due"].map(h=>(
+                    <th key={h} style={{padding:"6px 12px",fontSize:9,fontWeight:900,color:C.text3,
+                      textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {steps.map((s,i)=>(
+                  <tr key={s.stepId} style={{borderTop:"1px solid "+C.border,
+                    background:i%2===0?"transparent":C.card2}}>
+                    <td style={{padding:"7px 12px",fontSize:11,color:C.text,fontWeight:600,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</td>
+                    <td style={{padding:"7px 12px",fontSize:11,color:C.text2}}>{s.jurisdiction}</td>
+                    <td style={{padding:"7px 12px",fontSize:11,color:C.text2}}>{s.filingType}</td>
+                    <td style={{padding:"7px 12px",fontSize:11,color:C.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.stepName}</td>
+                    <td style={{padding:"7px 12px",fontSize:11,color:"#818cf8",fontWeight:700}}>{getUserName(s.assignedTo)}</td>
+                    <td style={{padding:"7px 12px"}}>
+                      <span style={{fontSize:10,fontWeight:800,color:statusColors[s.status]||C.text3}}>{s.status}</span>
+                    </td>
+                    <td style={{padding:"7px 12px",fontSize:11,color:C.text3,whiteSpace:"nowrap"}}>{s.dueDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+      {Object.keys(grouped).length===0&&(
+        <div style={{textAlign:"center",padding:48,color:C.text3,fontSize:13}}>No steps match your filters.</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Communications Page ──────────────────────────────────────────────────────
+function CommsPage({companies, filings, yearFilter, showToast}) {
+  const taxYear = String(parseInt(yearFilter)-1);
+  const [sending,   setSending]   = useState({});
+  const [sentCount, setSentCount] = useState({});
+  const [expanded,  setExpanded]  = useState({econ:true, tax:true, bvi:true});
+
+  const STEP_TRIGGERS = {
+    econ: "Send Google Form link to client",
+    tax:  "Send Information request Letter",
+    bvi:  "Send balance sheet request to client",
+  };
+  const FILING_TYPES = { econ:"Economic Substance", tax:"Tax Return", bvi:"Annual Return" };
+  const LABELS = { econ:"Economic Substance", tax:"Tax Return (US)", bvi:"BVI Annual Return" };
+
+  // Find companies where the trigger step is still Pending
+  const getCandidates = (type) => {
+    const triggerStep = STEP_TRIGGERS[type];
+    const filingType  = FILING_TYPES[type];
+    return companies.flatMap(c => {
+      const f = (filings[c.name]||[]).find(f=>
+        String(f.year)===yearFilter && f.filingType===filingType
+      );
+      if(!f) return [];
+      const step = (f.steps||[]).find(s=>s.stepName===triggerStep);
+      if(!step || step.status==="Done") return [];
+      return [{ company:c, filing:f, step, to:c.clientEmail||"" }];
+    });
+  };
+
+  const sendBlast = async(type) => {
+    const candidates = getCandidates(type);
+    setSending(p=>({...p,[type]:true}));
+    let count=0;
+    for(const {company, filing, step} of candidates){
+      if(!company.clientEmail) continue;
+      const tmpl = EMAIL_TEMPLATES[FILING_TYPES[type]]||{};
+      const vars = { companyName:company.name, jurisdiction:company.jurisdiction||"",
+        registrationNumber:company.registrationNumber||"", year:taxYear };
+      const subject = fill(tmpl.subject||"", vars);
+      const body    = fill(tmpl.body||"", vars);
+      try {
+        await apiWrite({action:"sendComplianceEmail", to:company.clientEmail, subject, body});
+        // Mark step as Waiting Client
+        const updStep = {...step, status:"Waiting Client"};
+        const ns = (filing.steps||[]).map(s=>s.stepId===step.stepId?updStep:s);
+        const upd = {...filing, status:"Waiting Client", steps:ns};
+        await fbSaveFiling(upd);
+        count++;
+      } catch(e) {}
+    }
+    setSentCount(p=>({...p,[type]:count}));
+    setSending(p=>({...p,[type]:false}));
+    showToast(count+" emails sent");
+  };
+
+  const Section = ({type}) => {
+    const candidates = getCandidates(type);
+    const isOpen = expanded[type];
+    const isSending = sending[type];
+    const sent = sentCount[type];
+    const withEmail    = candidates.filter(c=>c.to);
+    const withoutEmail = candidates.filter(c=>!c.to);
+
+    return (
+      <div style={{background:C.card,borderRadius:12,border:"1px solid "+C.border,marginBottom:16,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",background:C.card2,display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}
+          onClick={()=>setExpanded(p=>({...p,[type]:!p[type]}))}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:14,color:C.text,marginBottom:3}}>{LABELS[type]}</div>
+            <div style={{fontSize:11,color:C.text3}}>
+              {candidates.length} companies with pending first step &middot; {withEmail.length} have email &middot; {withoutEmail.length} missing email
+            </div>
+          </div>
+          {sent!==undefined&&<span style={{fontSize:11,color:C.success,fontWeight:700}}>{sent} sent ✓</span>}
+          {isOpen&&withEmail.length>0&&(
+            <button onClick={e=>{e.stopPropagation();sendBlast(type);}} disabled={isSending}
+              style={{background:C.accent,color:"#fff",border:"none",borderRadius:7,
+                padding:"6px 16px",fontSize:12,fontWeight:800,cursor:isSending?"default":"pointer",
+                display:"flex",alignItems:"center",gap:6,opacity:isSending?0.7:1}}>
+              {isSending?<><Spinner size={12} color="#fff"/>Sending...</>:"Send "+withEmail.length+" Emails"}
+            </button>
+          )}
+          <span style={{color:C.text3,fontSize:11}}>{isOpen?"▼":"▶"}</span>
+        </div>
+        {isOpen&&(
+          <div>
+            {candidates.length===0?(
+              <div style={{padding:24,textAlign:"center",color:C.text3,fontSize:12}}>
+                All first steps are complete for this filing type.
+              </div>
+            ):(
+              <>
+                <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1.5fr 80px",
+                  padding:"6px 16px",background:"#111",borderTop:"1px solid "+C.border}}>
+                  {["Company","Jurisdiction","Client Email",""].map(h=>(
+                    <span key={h} style={{fontSize:9,fontWeight:900,color:C.text3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</span>
+                  ))}
+                </div>
+                {candidates.map(({company,step})=>(
+                  <div key={company.name} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1.5fr 80px",
+                    padding:"9px 16px",borderTop:"1px solid "+C.border,alignItems:"center"}}>
+                    <div style={{fontWeight:600,fontSize:12,color:C.text}}>{company.name}</div>
+                    <div style={{fontSize:11,color:C.text2}}>{company.jurisdiction}</div>
+                    <div style={{fontSize:11,color:company.clientEmail?C.text2:C.danger}}>
+                      {company.clientEmail||"⚠ No email"}
+                    </div>
+                    <div>
+                      <span style={{fontSize:10,fontWeight:800,
+                        color:step.status==="Waiting Client"?"#fcd34d":C.text3,
+                        background:step.status==="Waiting Client"?"#422006":"transparent",
+                        borderRadius:5,padding:step.status==="Waiting Client"?"1px 6px":"0"}}>
+                        {step.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{maxWidth:1000,margin:"0 auto",padding:24}}>
+      <h2 style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:900,color:C.text,marginBottom:6}}>
+        Communications — Tax Year {taxYear}
+      </h2>
+      <p style={{fontSize:12,color:C.text3,marginBottom:24,lineHeight:1.6}}>
+        Send information request emails to clients. Only companies where the first step is still pending are shown.
+        Sending an email automatically marks the step as <strong style={{color:"#fcd34d"}}>Waiting Client</strong>.
+      </p>
+      <Section type="tax"/>
+      <Section type="econ"/>
+      <Section type="bvi"/>
+    </div>
+  );
+}
+
 // ─── Users Page ──────────────────────────────────────────────────────────────
 function UsersPage({users,setUsers,showToast,currentUserEmail,isOctavio}) {
   const [newName,  setNewName]  = useState("");
@@ -738,7 +1102,7 @@ export default function App() {
   const [emailBlast,setEmailBlast]=useState(false);
   const [sortBy,setSortBy]=useState("name");
   const [sortDir,setSortDir]=useState("asc");
-  const [view,setView]=useState("dashboard"); // dashboard | users
+  const [view,setView]=useState("dashboard"); // dashboard | users | reports | comms
 
   const isAdmin=currentUser&&(ADMIN_EMAILS.includes((currentUser.email||"").toLowerCase())||currentUser.role==="admin"||currentUser.role==="editor");
   const isOctavio=currentUser&&["omcardoso@gmail.com","cardoso@westchester.eu"].includes((currentUser.email||"  ").toLowerCase());
@@ -823,18 +1187,20 @@ export default function App() {
           </select>
           <span style={{fontSize:11,color:C.text3,background:C.card2,border:"1px solid "+C.border,borderRadius:6,padding:"3px 9px",whiteSpace:"nowrap"}}>Tax Year <span style={{color:"#818cf8",fontWeight:800}}>{taxYear}</span></span>
         </div>
-        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setEmailBlast(true)} style={{color:"#34d399",borderColor:"#064e3b"}}>📧 Email Clients</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}</>}
+        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="reports"?"dashboard":"reports")} style={{color:"#38bdf8",borderColor:"#0c4a6e"}}>📊 Reports</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="comms"?"dashboard":"comms")} style={{color:"#34d399",borderColor:"#064e3b"}}>✉ Comms</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}</>}
         <UserButton/>
       </div>
 
-      {view==="users" && <UsersPage users={users} setUsers={setUsers} showToast={showToast} currentUserEmail={currentUser?.email} isOctavio={isOctavio}/>}
-      {view!=="users" && <div style={{background:"#111",borderBottom:"1px solid "+C.border,padding:"8px 20px",display:"flex",gap:6,alignItems:"center"}}>
+      {view==="users"   && <UsersPage users={users} setUsers={setUsers} showToast={showToast} currentUserEmail={currentUser?.email} isOctavio={isOctavio}/>}
+      {view==="reports"  && <ReportsPage companies={companies} filings={filings} users={users} yearFilter={yearFilter}/>}
+      {view==="comms"    && <CommsPage companies={companies} filings={filings} yearFilter={yearFilter} showToast={showToast}/>}
+      {(view==="dashboard") && <div style={{background:"#111",borderBottom:"1px solid "+C.border,padding:"8px 20px",display:"flex",gap:6,alignItems:"center"}}>
         {[{v:stats.total,l:"Total",c:"#818cf8"},{v:stats.complete,l:"Complete",c:"#34d399"},{v:stats.overdue,l:"Overdue",c:"#f87171"},{v:stats.dueSoon,l:"Due Soon",c:"#fbbf24"},{v:myTasks.length,l:"My Tasks",c:"#a78bfa"}].map(s=>(
           <React.Fragment key={s.l}><span style={{fontSize:16,fontWeight:900,color:s.c}}>{s.v}</span><span style={{fontSize:10,color:C.text3,marginRight:14}}>{s.l}</span></React.Fragment>
         ))}
       </div>}
 
-      {view!=="users" && <div style={{display:"flex",height:"calc(100vh - 104px)"}}>
+      {(view==="dashboard") && <div style={{display:"flex",height:"calc(100vh - 104px)"}}>
         <div style={{flex:1,overflowY:"auto",minWidth:0}}>
           <div style={{padding:"8px 14px",borderBottom:"1px solid "+C.border,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",background:C.card,position:"sticky",top:0,zIndex:10}}>
             <div style={{position:"relative",flex:"1 1 180px",maxWidth:240}}>
