@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { SignedIn, SignedOut, SignIn, useUser, UserButton } from "@clerk/clerk-react";
-import { db, fbGetFilings, fbSaveFiling, fbDeleteFiling, fbDeleteYear, fbGetTemplates, fbSaveTemplate } from "./firebase.js";
+import { db, fbGetFilings, fbSaveFiling, fbDeleteFiling, fbDeleteYear, fbGetTemplates, fbSaveTemplate, fbGetSettings, fbSaveSettings } from "./firebase.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const SCRIPT_URL   = import.meta.env.VITE_SCRIPT_URL;
@@ -109,11 +109,11 @@ const EMAIL_TEMPLATES = {
   },
   "Tax Return": {
     subject: "{{companyName}} Declaracao de Renda - Follow up",
-    body: `Prezado Cliente,\n\nSe o senhor(a) esta recebendo esse email e porque nao recebemos ate esse momento as informacoes Completas para poder preparar a declaracao de renda da sua empresa para {{year}}.\n\nPara declaracao de renda, solicitamos o envio das demonstracoes financeiras do ano de {{year}} atraves de uma planilha ou extratos bancarios.\n\nE crucial recebermos todas as informacoes ate dia 30 de junho de {{year}}.\n\nOctavio Cardoso\nPresident - Westchester International LLC`,
+    body: `Prezado Cliente,\n\nSe o senhor(a) esta recebendo esse email e porque nao recebemos ate esse momento as informacoes Completas para poder preparar a declaracao de renda da sua empresa para {{year}}.\n\nPara que possamos dar andamento, solicitamos o envio dos seguintes itens:\n\n{{pendingItems}}\n\nPor favor, envie todos os documentos listados acima em um unico email. E crucial recebermos todas as informacoes ate dia 30 de junho de {{year}}.\n\nOctavio Cardoso\nPresident - Westchester International LLC`,
   },
   "Annual Return": {
     subject: "{{companyName}} Declaracao Anual - BVI",
-    body: `Prezado cliente,\n\nGostariamos de lembra-lo sobre a obrigacao anual de apresentacao da Declaracao Financeira Anual (AFR) para todas as empresas com sede em British Virgin Islands (BVI).\n\nSolicitamos o envio do balanco contabil da sua empresa referente ao ano fiscal de {{year}} o mais breve possivel.\n\nOctavio Cardoso\nPresident - Westchester International LLC`,
+    body: `Prezado cliente,\n\nGostariamos de lembra-lo sobre a obrigacao anual de apresentacao da Declaracao Financeira Anual (AFR) para todas as empresas com sede em British Virgin Islands (BVI).\n\nPara dar andamento, precisamos dos seguintes itens:\n\n{{pendingItems}}\n\nSolicitamos o envio das informacoes referentes ao ano fiscal de {{year}} o mais breve possivel.\n\nOctavio Cardoso\nPresident - Westchester International LLC`,
   },
 };
 
@@ -611,7 +611,34 @@ function EmailBlastModal({companies,filings,yearFilter,onClose}) {
   const [sent,setSent]=useState(0);
   const [done,setDone]=useState(false);
   const [editTo,setEditTo]=useState({});
-  const getTmpl=g=>{const tmpl=EMAIL_TEMPLATES[g.filing.filingType]||{};const vars={companyName:g.company.name,jurisdiction:g.company.jurisdiction||"",registrationNumber:g.company.registrationNumber||"",year:taxYear};return{subject:fill(tmpl.subject||"",vars),body:fill(tmpl.body||"",vars)};};
+  const STEP_PT = {
+    "Bank Statements received":                              "Extratos Bancarios",
+    "Mortgage statement Received":                           "Extrato de Financiamento Imobiliario",
+    "Property Management Statement received":                "Extrato da Administradora do Imovel",
+    "HUD Received (if new purchase made)":                   "HUD - Declaracao de Compra e Venda (se aplicavel)",
+    "Information on Financial Transactions with Shareholders":"Informacoes sobre Movimentacoes Financeiras com Acionistas",
+    "Property Tax Information Received":                     "Comprovante de Imposto sobre Propriedade",
+    "Received signed returns forms from client":             "Formularios de Declaracao de Renda Assinados",
+    "Client submitted form":                                 "Formulario de Substancia Economica Preenchido",
+    "Balance sheet received from client":                    "Balanco Contabil",
+  };
+  const getTmpl=g=>{
+    // Use saved template from settings, fall back to defaults
+    const savedTmpl = emailTemplates[g.filing.filingType];
+    const tmpl = savedTmpl || EMAIL_TEMPLATES[g.filing.filingType] || {};
+    // Build pending client steps list — translated to Portuguese
+    const clientSteps = (g.filing.steps||[])
+      .filter(s=>s.assignedTo==="__client__"&&s.status!=="Done")
+      .map(s=>"  - "+(STEP_PT[s.stepName]||s.stepName));
+    const pendingItems = clientSteps.length > 0 ? clientSteps.join("\n") : "  - (nenhum item pendente)";
+    const vars = { companyName:g.company.name, jurisdiction:g.company.jurisdiction||"",
+      registrationNumber:g.company.registrationNumber||"", year:taxYear, pendingItems };
+    let body=fill(tmpl.body||"",vars);
+    if(formUrl&&g.filing.filingType==="Economic Substance"){
+      body=body.replace("https://docs.google.com/forms/d/e/1FAIpQLScEozxzdQyJDo90HNbtmIweKtlEM_fDO4jZhlTUWcL99ugCMg/viewform?usp=publish-editor",formUrl);
+    }
+    return{subject:fill(tmpl.subject||"",vars),body};
+  };
   const sendAll=async()=>{setSending(true);let count=0;for(const g of groups){const to=editTo[g.filing.filingId]!==undefined?editTo[g.filing.filingId]:g.to;if(!to)continue;const{subject,body}=getTmpl(g);try{await apiWrite({action:"sendComplianceEmail",to,subject,body});count++;setSent(count);}catch(e){}}setDone(true);setSending(false);};
   const inp={width:"100%",background:C.inputBg,border:"1px solid "+C.border2,borderRadius:7,color:C.text,padding:"5px 8px",fontSize:12,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
   return (
@@ -857,7 +884,7 @@ function ReportsPage({companies, filings, users, yearFilter}) {
 }
 
 // ─── Communications Page ──────────────────────────────────────────────────────
-function CommsPage({companies, filings, yearFilter, showToast}) {
+function CommsPage({companies, filings, yearFilter, showToast, formUrl, emailTemplates}) {
   const taxYear = String(parseInt(yearFilter)-1);
   const [sending,   setSending]   = useState({});
   const [sentCount, setSentCount] = useState({});
@@ -997,6 +1024,115 @@ function CommsPage({companies, filings, yearFilter, showToast}) {
   );
 }
 
+// ─── Settings Page ───────────────────────────────────────────────────────────
+function SettingsPage({settings, setSettings, showToast, emailTemplates, setEmailTemplates}) {
+  const [formUrl,       setFormUrl]       = useState(settings.formUrl||"");
+  const [replyTo,       setReplyTo]       = useState(settings.replyTo||"cardoso@westchester.eu");
+  const [saving,        setSaving]        = useState(false);
+  const [localTemplates,setLocalTemplates]= useState(emailTemplates||{});
+
+  const save = async() => {
+    setSaving(true);
+    const updated = { formUrl, replyTo };
+    try {
+      await fbSaveSettings(updated);
+      setSettings(updated);
+      // Save email templates to Firestore
+      await fbSaveSettings({ ...updated, emailTemplates: localTemplates });
+      setEmailTemplates(localTemplates);
+      showToast("Settings saved");
+    } catch(e) { showToast("Error: "+e.message, "error"); }
+    setSaving(false);
+  };
+
+  const inp = {width:"100%",background:C.inputBg,border:"1px solid "+C.border2,borderRadius:7,
+    color:C.text,padding:"8px 10px",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {fontSize:10,fontWeight:800,color:C.text3,textTransform:"uppercase",
+    letterSpacing:"0.06em",display:"block",marginBottom:5};
+
+  return (
+    <div style={{maxWidth:680,margin:"0 auto",padding:24}}>
+      <h2 style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:900,color:C.text,marginBottom:6}}>Settings</h2>
+      <p style={{fontSize:12,color:C.text3,marginBottom:24}}>Global settings for the compliance tracker. Changes apply to all users.</p>
+
+      {/* Email Settings */}
+      <div style={{background:C.card,borderRadius:12,padding:20,border:"1px solid "+C.border,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:4}}>Email Settings</div>
+        <p style={{fontSize:11,color:C.text3,marginBottom:16}}>Used for all outgoing client communications.</p>
+        <div style={{marginBottom:16}}>
+          <label style={lbl}>Reply-To Email Address</label>
+          <input value={replyTo} onChange={e=>setReplyTo(e.target.value)}
+            placeholder="cardoso@westchester.eu" style={inp}/>
+          <div style={{fontSize:10,color:C.text3,marginTop:4}}>All client emails will have this as the reply-to address.</div>
+        </div>
+      </div>
+
+      {/* Economic Substance Form */}
+      <div style={{background:C.card,borderRadius:12,padding:20,border:"1px solid "+C.border,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:4}}>Economic Substance — Google Form URL</div>
+        <p style={{fontSize:11,color:C.text3,marginBottom:16,lineHeight:1.5}}>
+          This URL is included in all Economic Substance emails. Update it each year when you create a new Google Form.
+        </p>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Current Form URL</label>
+          <input value={formUrl} onChange={e=>setFormUrl(e.target.value)}
+            placeholder="https://docs.google.com/forms/d/e/..." style={inp}/>
+        </div>
+        {formUrl && (
+          <div style={{background:C.card2,borderRadius:8,padding:10,border:"1px solid "+C.border,
+            fontSize:11,color:C.text3,wordBreak:"break-all",lineHeight:1.5}}>
+            <span style={{color:C.text2,fontWeight:700}}>Preview: </span>
+            <a href={formUrl} target="_blank" rel="noreferrer"
+              style={{color:C.accent}}>{formUrl}</a>
+          </div>
+        )}
+      </div>
+
+      {/* Email Template Editor */}
+      <div style={{background:C.card,borderRadius:12,padding:20,border:"1px solid "+C.border,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:4}}>Email Templates</div>
+        <p style={{fontSize:11,color:C.text3,marginBottom:4,lineHeight:1.5}}>
+          Edit the email templates sent from the Communications page. Use these variables in the body:
+        </p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
+          {["{{companyName}}","{{jurisdiction}}","{{registrationNumber}}","{{year}}","{{pendingItems}}","{{formUrl}}"].map(v=>(
+            <code key={v} style={{background:C.card2,border:"1px solid "+C.border2,borderRadius:5,
+              padding:"2px 7px",fontSize:10,color:"#818cf8"}}>{v}</code>
+          ))}
+        </div>
+        <p style={{fontSize:10,color:C.text3,marginBottom:16}}>
+          <strong style={{color:"#fcd34d"}}>{{pendingItems}}</strong> — automatically replaced with a bullet list of uncompleted client steps for each company.
+        </p>
+        {["Tax Return","Economic Substance","Annual Return"].map(type=>(
+          <div key={type} style={{marginBottom:16,padding:14,background:C.card2,
+            borderRadius:9,border:"1px solid "+C.border}}>
+            <div style={{fontWeight:700,fontSize:12,color:C.text,marginBottom:10}}>{type}</div>
+            <div style={{marginBottom:8}}>
+              <label style={{...lbl,marginBottom:3}}>Subject</label>
+              <input
+                value={(localTemplates[type]||EMAIL_TEMPLATES[type]||{}).subject||""}
+                onChange={e=>setLocalTemplates(p=>({...p,[type]:{...(p[type]||EMAIL_TEMPLATES[type]||{}),subject:e.target.value}}))}
+                style={inp}/>
+            </div>
+            <div>
+              <label style={{...lbl,marginBottom:3}}>Body</label>
+              <textarea
+                value={(localTemplates[type]||EMAIL_TEMPLATES[type]||{}).body||""}
+                onChange={e=>setLocalTemplates(p=>({...p,[type]:{...(p[type]||EMAIL_TEMPLATES[type]||{}),body:e.target.value}}))}
+                rows={8}
+                style={{...inp,resize:"vertical",lineHeight:1.6,fontSize:12,fontFamily:"'Courier New',monospace"}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Btn onClick={save} disabled={saving}>
+        {saving?<><Spinner size={13} color="#fff"/>Saving...</>:"Save All Settings"}
+      </Btn>
+    </div>
+  );
+}
+
 // ─── Users Page ──────────────────────────────────────────────────────────────
 function UsersPage({users,setUsers,showToast,currentUserEmail,isOctavio}) {
   const [newName,  setNewName]  = useState("");
@@ -1110,7 +1246,9 @@ export default function App() {
   const [emailBlast,setEmailBlast]=useState(false);
   const [sortBy,setSortBy]=useState("name");
   const [sortDir,setSortDir]=useState("asc");
-  const [view,setView]=useState("dashboard"); // dashboard | users | reports | comms
+  const [view,setView]=useState("dashboard");
+  const [settings,setSettings]=useState({formUrl:""});
+  const [emailTemplates,setEmailTemplates]=useState({}); // dashboard | users | reports | comms
 
   const isAdmin=currentUser&&(ADMIN_EMAILS.includes((currentUser.email||"").toLowerCase())||currentUser.role==="admin"||currentUser.role==="editor");
   const isOctavio=currentUser&&["omcardoso@gmail.com","cardoso@westchester.eu"].includes((currentUser.email||"  ").toLowerCase());
@@ -1131,10 +1269,13 @@ export default function App() {
     setLoading(true);
     try{
       const email=(clerkUser.primaryEmailAddress?.emailAddress||"").toLowerCase();
-      const [cd,ud,filingDocs,tmpl]=await Promise.all([apiRead("getCompanies"),apiRead("getUsers"),fbGetFilings(),fbGetTemplates()]);
+      const [cd,ud,filingDocs,tmpl,sett]=await Promise.all([apiRead("getCompanies"),apiRead("getUsers"),fbGetFilings(),fbGetTemplates(),fbGetSettings()]);
       const ul=ud.users||[];
       setCurrentUser(ul.find(u=>(u.email||"").toLowerCase()===email)||{email,role:"viewer",name:clerkUser.fullName||email});
       setUsers(ul);setCompanies(cd.companies||[]);setTemplates(tmpl);
+      const sett2 = sett||{formUrl:""};
+      setSettings(sett2);
+      setEmailTemplates(sett2.emailTemplates||{});
       const fm={};
       filingDocs.forEach(f=>{
         const cleaned={...f,steps:cleanSteps(f.steps)};
@@ -1195,7 +1336,9 @@ export default function App() {
   return (
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",color:C.text}}>
       <div style={{background:"#000",borderBottom:"1px solid "+C.border,padding:"0 20px",display:"flex",alignItems:"center",gap:12,height:54,position:"sticky",top:0,zIndex:200}}>
-        <span style={{fontFamily:"Georgia,serif",fontWeight:900,fontSize:15,color:C.text}}>Compliance Tracker</span>
+        <button onClick={()=>setView("dashboard")} style={{background:"none",border:"none",cursor:"pointer",fontFamily:"Georgia,serif",fontWeight:900,fontSize:15,color:C.text,padding:0,display:"flex",alignItems:"center",gap:6}}>
+          🏠 Compliance Tracker
+        </button>
         <span style={{color:C.border2}}>|</span>
         <span style={{fontSize:11,color:C.text3}}>Westchester International</span>
         <div style={{flex:1}}/>
@@ -1206,13 +1349,15 @@ export default function App() {
           </select>
           <span style={{fontSize:11,color:C.text3,background:C.card2,border:"1px solid "+C.border,borderRadius:6,padding:"3px 9px",whiteSpace:"nowrap"}}>Tax Year <span style={{color:"#818cf8",fontWeight:800}}>{taxYear}</span></span>
         </div>
-        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="reports"?"dashboard":"reports")} style={{color:"#38bdf8",borderColor:"#0c4a6e"}}>📊 Reports</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="comms"?"dashboard":"comms")} style={{color:"#34d399",borderColor:"#064e3b"}}>✉ Comms</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}</>}
+        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="reports"?"dashboard":"reports")} style={{color:"#38bdf8",borderColor:"#0c4a6e"}}>📊 Reports</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="comms"?"dashboard":"comms")} style={{color:"#34d399",borderColor:"#064e3b"}}>✉ Comms</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}
+            <Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="settings"?"dashboard":"settings")} style={{color:"#f59e0b",borderColor:"#78350f"}}>⚙ Settings</Btn></>}
         <UserButton/>
       </div>
 
+      {view==="settings" && <SettingsPage settings={settings} setSettings={setSettings} showToast={showToast} emailTemplates={emailTemplates} setEmailTemplates={setEmailTemplates}/>}
       {view==="users"   && <UsersPage users={users} setUsers={setUsers} showToast={showToast} currentUserEmail={currentUser?.email} isOctavio={isOctavio}/>}
       {view==="reports"  && <ReportsPage companies={companies} filings={filings} users={users} yearFilter={yearFilter}/>}
-      {view==="comms"    && <CommsPage companies={companies} filings={filings} yearFilter={yearFilter} showToast={showToast}/>}
+      {view==="comms"    && <CommsPage companies={companies} filings={filings} yearFilter={yearFilter} showToast={showToast} formUrl={settings.formUrl||""} emailTemplates={emailTemplates}/>}
       {(view==="dashboard") && <div style={{background:"#111",borderBottom:"1px solid "+C.border,padding:"8px 20px",display:"flex",gap:6,alignItems:"center"}}>
         {[{v:stats.total,l:"Total",c:"#818cf8"},{v:stats.complete,l:"Complete",c:"#34d399"},{v:stats.overdue,l:"Overdue",c:"#f87171"},{v:stats.dueSoon,l:"Due Soon",c:"#fbbf24"},{v:myTasks.length,l:"My Tasks",c:"#a78bfa"}].map(s=>(
           <React.Fragment key={s.l}><span style={{fontSize:16,fontWeight:900,color:s.c}}>{s.v}</span><span style={{fontSize:10,color:C.text3,marginRight:14}}>{s.l}</span></React.Fragment>
