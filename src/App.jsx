@@ -43,6 +43,12 @@ function getStepNames(filingType, jurisdiction) {
   const steps = DEFAULT_STEPS[key] || DEFAULT_STEPS[filingType] || [];
   return steps.map(s => typeof s === "string" ? s : s.name);
 }
+function getDefaultAssignment(stepName, filingType, jurisdiction) {
+  const key = getTemplateKey(filingType, jurisdiction);
+  const defaults = DEFAULT_STEPS[key] || DEFAULT_STEPS[filingType] || [];
+  const match = defaults.find(s => (typeof s==="string"?s:s.name) === stepName);
+  return match ? (typeof match==="string" ? "" : match.assignedTo||"") : "";
+}
 
 // Step definitions with default assignments
 // assignedTo: "" = unassigned, "__client__" = client, email = specific user
@@ -549,7 +555,7 @@ function YearManager({companies,filings,setFilings,yearFilter,setYearFilter,onCl
       const toCreate=types.filter(ft=>!existing.includes(ft));
       for(const ft of toCreate){
         const stepDefs=getStepsFromTemplates(ft,c.jurisdiction,templates);
-        const steps=stepDefs.map((s,i)=>({stepId:uid(),stepName:typeof s==="string"?s:s.name,assignedTo:typeof s==="string"?"":s.assignedTo||"",status:"Pending",notes:"",completedAt:"",order:i}));
+        const steps=stepDefs.map((s,i)=>{const n=typeof s==="string"?s:s.name;const a=(typeof s==="object"&&s.assignedTo)?s.assignedTo:getDefaultAssignment(n,ft,c.jurisdiction);return {stepId:uid(),stepName:n,assignedTo:a,status:"Pending",notes:"",completedAt:"",order:i};});
         const f={filingId:uid(),companyName:c.name,jurisdiction:c.jurisdiction,filingType:ft,year:parseInt(newYear),status:"Not Started",dueDate:getDueDate(ft,parseInt(newYear)),steps,yearNotes:""};
         await fbSaveFiling(f);created++;
         setProgress("Creating... "+created+" filings");
@@ -1259,7 +1265,7 @@ export default function App() {
                     const types=getFilingTypes(c.jurisdiction);
                     for(const ft of types){
                       const stepDefs=getStepsFromTemplates(ft,c.jurisdiction,templates);
-                      const steps=stepDefs.map((s,i)=>({stepId:uid(),stepName:typeof s==="string"?s:s.name,assignedTo:typeof s==="string"?"":s.assignedTo||"",status:"Pending",notes:"",completedAt:"",order:i}));
+                      const steps=stepDefs.map((s,i)=>{const n=typeof s==="string"?s:s.name;const a=(typeof s==="object"&&s.assignedTo)?s.assignedTo:getDefaultAssignment(n,ft,c.jurisdiction);return {stepId:uid(),stepName:n,assignedTo:a,status:"Pending",notes:"",completedAt:"",order:i};});
                       const f={filingId:uid(),companyName:c.name,jurisdiction:c.jurisdiction,filingType:ft,year:parseInt(yearFilter),status:"Not Started",dueDate:getDueDate(ft,parseInt(yearFilter)),steps,yearNotes:""};
                       await fbSaveFiling(f);updateFiling(c.name,f);
                     }
