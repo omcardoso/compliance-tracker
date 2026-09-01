@@ -834,7 +834,7 @@ export default function App() {
         ))}
       </div>
 
-      <div style={{display:"flex",height:"calc(100vh - 104px)"}}>
+      {view!=="users" && <div style={{display:"flex",height:"calc(100vh - 104px)"}}>
         <div style={{flex:1,overflowY:"auto",minWidth:0}}>
           <div style={{padding:"8px 14px",borderBottom:"1px solid "+C.border,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",background:C.card,position:"sticky",top:0,zIndex:10}}>
             <div style={{position:"relative",flex:"1 1 180px",maxWidth:240}}>
@@ -893,10 +893,10 @@ export default function App() {
         </div>
 
         {selectedCo&&<SidePanel company={selectedCo} filings={filings} users={users} isAdmin={isAdmin} currentUserEmail={currentUser?.email} yearFilter={yearFilter} onClose={()=>setSelectedCo(null)} updateFiling={updateFiling} templates={templates} onUpdateTemplate={updateTemplate}/>}
-      </div>
+      </div>}
 
-      </>
-      }
+
+
       {emailBlast&&<EmailBlastModal companies={companies} filings={filings} yearFilter={yearFilter} onClose={()=>setEmailBlast(false)}/>}
       {yearMgr&&<YearManager companies={companies} filings={filings} setFilings={setFilings} yearFilter={yearFilter} setYearFilter={setYearFilter} onClose={()=>setYearMgr(false)} showToast={showToast} templates={templates} isOctavio={isOctavio}/>}
 
