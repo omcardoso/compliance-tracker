@@ -290,7 +290,30 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
   const [filingStatus,setFilingStatus]=useState(filing.status||"Not Started");
   const [addingStep,setAddingStep]=useState(false);
   const [newStepName,setNewStepName]=useState("");
-  const [scopeModal,setScopeModal]=useState(null); // {type:"add"|"delete", step?, name?}
+  const [scopeModal,setScopeModal]=useState(null);
+  const [dragOverId,setDragOverId]=useState(null);
+  const dragIdRef=React.useRef(null);
+
+  const handleDragStart=(e,step)=>{ dragIdRef.current=step.stepId; e.dataTransfer.effectAllowed="move"; };
+  const handleDragOver=(e,step)=>{ e.preventDefault(); setDragOverId(step.stepId); };
+  const handleDragLeave=()=>setDragOverId(null);
+  const handleDrop=async(e,targetStep)=>{
+    e.preventDefault();
+    const draggedId=dragIdRef.current;
+    setDragOverId(null);
+    if(!draggedId||draggedId===targetStep.stepId) return;
+    const draggedIdx=steps.findIndex(s=>s.stepId===draggedId);
+    const targetIdx=steps.findIndex(s=>s.stepId===targetStep.stepId);
+    const ns=[...steps];
+    const [removed]=ns.splice(draggedIdx,1);
+    ns.splice(targetIdx,0,removed);
+    ns.forEach((s,i)=>{ s.order=i; });
+    const st=recalcStatus(ns);
+    const upd={...filing,status:st,steps:ns};
+    setSteps(ns);setFilingStatus(st);
+    await fbSaveFiling(upd);
+    onUpdate(upd);
+  }; // {type:"add"|"delete", step?, name?}
   const days=daysUntil(filing.dueDate);
   const done=steps.filter(s=>s.status==="Done").length;
   const pct=steps.length?Math.round((done/steps.length)*100):0;
@@ -303,12 +326,30 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
   };
 
   const updateStep=async(updated)=>{
+    const prevStep=steps.find(s=>s.stepId===updated.stepId);
     const ns=steps.map(s=>s.stepId===updated.stepId?updated:s);
     const st=recalcStatus(ns);
     const upd={...filing,status:st,steps:ns};
     setSteps(ns);setFilingStatus(st);
     await fbSaveFiling(upd);
     onUpdate(upd);
+    // Send email if step newly assigned to a real user
+    if(updated.assignedTo && updated.assignedTo!=="__client__" && updated.assignedTo!==prevStep?.assignedTo){
+      const assignedUser=users.find(u=>u.email===updated.assignedTo);
+      if(assignedUser){
+        const nl="\n";
+        const subj="New task assigned: "+updated.stepName;
+        const body="Hi "+assignedUser.name+","+nl+nl+"You have been assigned a new compliance task:"+nl+nl+
+          "Task: "+updated.stepName+nl+
+          "Entity: "+company.name+nl+
+          "Jurisdiction: "+company.jurisdiction+nl+
+          "Filing: "+filing.filingType+nl+
+          "Due date: "+filing.dueDate+nl+nl+
+          "Please log in to the Compliance Tracker to update the status."+nl+nl+
+          "Westchester International LLC";
+        try{await apiWrite({action:"sendComplianceEmail",to:updated.assignedTo,subject:subj,body});}catch(e){}
+      }
+    }
   };
 
   const handleAddStep=()=>{
@@ -377,8 +418,21 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
       {expanded&&(
         <>
           {steps.map(step=>(
-            <StepRow key={step.stepId} step={step} users={users} isAdmin={isAdmin}
-              currentUserEmail={currentUserEmail} onUpdate={updateStep} onDelete={handleDeleteStep}/>
+            <div key={step.stepId}
+              draggable={isAdmin}
+              onDragStart={e=>handleDragStart(e,step)}
+              onDragOver={e=>handleDragOver(e,step)}
+              onDragLeave={handleDragLeave}
+              onDrop={e=>handleDrop(e,step)}
+              style={{
+                opacity:dragIdRef.current===step.stepId?0.4:1,
+                borderTop:dragOverId===step.stepId?"2px solid "+C.accent:"2px solid transparent",
+                transition:"border-color 0.1s",
+                cursor:isAdmin?"grab":"default"
+              }}>
+              <StepRow step={step} users={users} isAdmin={isAdmin}
+                currentUserEmail={currentUserEmail} onUpdate={updateStep} onDelete={handleDeleteStep}/>
+            </div>
           ))}
           {/* Add step row */}
           {isAdmin&&(
@@ -428,7 +482,7 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
 }
 
 // ─── Year Manager ─────────────────────────────────────────────────────────────
-function YearManager({companies,filings,setFilings,yearFilter,setYearFilter,onClose,showToast,templates}) {
+function YearManager({companies,filings,setFilings,yearFilter,setYearFilter,onClose,showToast,templates,isOctavio}) {
   const [working,setWorking]=useState(false);
   const [progress,setProgress]=useState("");
   const [delYear,setDelYear]=useState("");
@@ -472,14 +526,15 @@ function YearManager({companies,filings,setFilings,yearFilter,setYearFilter,onCl
         {progress&&<p style={{fontSize:11,color:C.accent,marginBottom:8}}>{progress}</p>}
         <Btn onClick={initAll} disabled={working}>{working?<><Spinner size={13} color="#fff"/>Working...</>:"Create All Filings for "+newYear}</Btn>
       </div>
-      <div style={{background:"#1a0a0a",borderRadius:10,padding:16,border:"1px solid #7f1d1d"}}>
+      {isOctavio&&<div style={{background:"#1a0a0a",borderRadius:10,padding:16,border:"1px solid #7f1d1d"}}>
         <div style={{fontWeight:800,fontSize:13,color:"#fca5a5",marginBottom:12}}>Delete Entire Year</div>
+        <p style={{fontSize:11,color:"#f87171",marginBottom:10,lineHeight:1.5}}>Only years with existing filings appear here.</p>
         <select value={delYear} onChange={e=>setDelYear(e.target.value)} style={{...sel,background:"#1a0a0a",borderColor:"#7f1d1d"}}>
           <option value="">-- Select year --</option>
           {years.map(y=><option key={y} value={y}>{y}</option>)}
         </select>
         <Btn variant="danger" onClick={deleteYear} disabled={!delYear||working}>Delete All {delYear||"..."} Filings</Btn>
-      </div>
+      </div>}
     </Modal>
   );
 }
@@ -570,6 +625,98 @@ function SidePanel({company,filings,users,isAdmin,currentUserEmail,yearFilter,on
   );
 }
 
+// ─── Users Page ──────────────────────────────────────────────────────────────
+function UsersPage({users,setUsers,showToast,currentUserEmail,isOctavio}) {
+  const [newName,  setNewName]  = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole,  setNewRole]  = useState("editor");
+  const [saving,   setSaving]   = useState(false);
+  const ROLES = ["admin","editor","client","viewer"];
+  const inp = {background:C.inputBg,border:"1px solid "+C.border2,borderRadius:7,color:C.text,padding:"7px 10px",fontSize:13,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box",colorScheme:"dark"};
+  const lbl = {fontSize:10,fontWeight:800,color:C.text3,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4};
+
+  const addUser = async() => {
+    if(!newName.trim()||!newEmail.trim()){alert("Name and email required.");return;}
+    setSaving(true);
+    const user={id:"u_"+Date.now(),name:newName.trim(),email:newEmail.trim().toLowerCase(),
+      role:newRole,initials:newName.trim().split(" ").map(n=>n[0]).join("").toUpperCase().slice(0,2),status:"active"};
+    try{
+      await apiWrite({action:"saveUser",user});
+      setUsers(prev=>[...prev,user]);
+      setNewName("");setNewEmail("");setNewRole("editor");
+      showToast(user.name+" added successfully");
+    }catch(e){alert("Error: "+e.message);}
+    setSaving(false);
+  };
+
+  const removeUser = async(user) => {
+    if(user.email===currentUserEmail){alert("You cannot delete your own account.");return;}
+    if(!window.confirm("Delete "+user.name+"? This cannot be undone.")) return;
+    try{
+      await apiWrite({action:"deleteUser",id:user.id});
+      setUsers(prev=>prev.filter(u=>u.id!==user.id));
+      showToast(user.name+" deleted");
+    }catch(e){alert("Error: "+e.message);}
+  };
+
+  const roleBadge = role => {
+    const colors={admin:{bg:"#1e1b4b",color:"#818cf8"},editor:{bg:"#1e3a5f",color:"#93c5fd"},client:{bg:"#052e16",color:"#6ee7b7"},viewer:{bg:"#1e293b",color:"#94a3b8"}};
+    const s=colors[role]||colors.viewer;
+    return <span style={{background:s.bg,color:s.color,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:800}}>{role}</span>;
+  };
+
+  return (
+    <div style={{maxWidth:800,margin:"0 auto",padding:24}}>
+      <h2 style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:900,color:C.text,marginBottom:6}}>User Management</h2>
+      <p style={{fontSize:12,color:C.text3,marginBottom:24}}>Add or remove users. Roles: admin (full access), editor (can update steps), client (view only), viewer (read only).</p>
+
+      {isOctavio&&<div style={{background:C.card,borderRadius:12,padding:20,border:"1px solid "+C.border,marginBottom:24}}>
+        <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:16}}>Add New User</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 140px",gap:12,marginBottom:14}}>
+          <div><label style={lbl}>Full Name</label><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="John Smith" style={inp}/></div>
+          <div><label style={lbl}>Email</label><input value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="john@example.com" type="email" style={inp}/></div>
+          <div><label style={lbl}>Role</label>
+            <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={inp}>
+              {ROLES.map(r=><option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+        </div>
+        <Btn onClick={addUser} disabled={saving||!newName.trim()||!newEmail.trim()}>
+          {saving?<><Spinner size={13} color="#fff"/>Adding...</>:"+ Add User"}
+        </Btn>
+      </div>}
+
+      {/* Users list */}
+      <div style={{background:C.card,borderRadius:12,border:"1px solid "+C.border,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1.5fr 100px 60px",padding:"8px 16px",background:"#111",borderBottom:"1px solid "+C.border}}>
+          {["Name","Email","Role",""].map(h=><span key={h} style={{fontSize:9,fontWeight:900,color:C.text3,textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</span>)}
+        </div>
+        {users.map(u=>(
+          <div key={u.id} style={{display:"grid",gridTemplateColumns:"1fr 1.5fr 100px 60px",padding:"12px 16px",borderBottom:"1px solid "+C.border,alignItems:"center"}}
+            onMouseEnter={e=>e.currentTarget.style.background=C.card2}
+            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <div>
+              <div style={{fontWeight:700,fontSize:13,color:C.text}}>{u.name}</div>
+              {u.id&&<div style={{fontSize:10,color:C.text3}}>ID: {u.id}</div>}
+            </div>
+            <div style={{fontSize:12,color:C.text2}}>{u.email}</div>
+            <div>{roleBadge(u.role||"viewer")}</div>
+            <div>
+              {isOctavio&&u.email!==currentUserEmail&&(
+                <button onClick={()=>removeUser(u)}
+                  style={{background:"none",border:"1px solid #450a0a",borderRadius:6,color:"#fca5a5",cursor:"pointer",fontSize:11,fontWeight:700,padding:"3px 8px"}}>
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {users.length===0&&<div style={{padding:32,textAlign:"center",color:C.text3,fontSize:13}}>No users found.</div>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const {user:clerkUser}=useUser();
@@ -591,8 +738,10 @@ export default function App() {
   const [emailBlast,setEmailBlast]=useState(false);
   const [sortBy,setSortBy]=useState("name");
   const [sortDir,setSortDir]=useState("asc");
+  const [view,setView]=useState("dashboard"); // dashboard | users
 
   const isAdmin=currentUser&&(ADMIN_EMAILS.includes((currentUser.email||"").toLowerCase())||currentUser.role==="admin"||currentUser.role==="editor");
+  const isOctavio=currentUser&&["omcardoso@gmail.com","cardoso@westchester.eu"].includes((currentUser.email||"  ").toLowerCase());
   const taxYear=String(parseInt(yearFilter)-1);
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
   const updateTemplate=(key,steps)=>{setTemplates(prev=>({...prev,[key]:steps}));};
@@ -674,11 +823,12 @@ export default function App() {
           </select>
           <span style={{fontSize:11,color:C.text3,background:C.card2,border:"1px solid "+C.border,borderRadius:6,padding:"3px 9px",whiteSpace:"nowrap"}}>Tax Year <span style={{color:"#818cf8",fontWeight:800}}>{taxYear}</span></span>
         </div>
-        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setEmailBlast(true)} style={{color:"#34d399",borderColor:"#064e3b"}}>📧 Email Clients</Btn></>}
+        {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setEmailBlast(true)} style={{color:"#34d399",borderColor:"#064e3b"}}>📧 Email Clients</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}<//>}
         <UserButton/>
       </div>
 
-      <div style={{background:"#111",borderBottom:"1px solid "+C.border,padding:"8px 20px",display:"flex",gap:6,alignItems:"center"}}>
+      {view==="users" && <UsersPage users={users} setUsers={setUsers} showToast={showToast} currentUserEmail={currentUser?.email} isOctavio={isOctavio}/>}
+      {view!=="users" && <div style={{background:"#111",borderBottom:"1px solid "+C.border,padding:"8px 20px",display:"flex",gap:6,alignItems:"center"}}>
         {[{v:stats.total,l:"Total",c:"#818cf8"},{v:stats.complete,l:"Complete",c:"#34d399"},{v:stats.overdue,l:"Overdue",c:"#f87171"},{v:stats.dueSoon,l:"Due Soon",c:"#fbbf24"},{v:myTasks.length,l:"My Tasks",c:"#a78bfa"}].map(s=>(
           <React.Fragment key={s.l}><span style={{fontSize:16,fontWeight:900,color:s.c}}>{s.v}</span><span style={{fontSize:10,color:C.text3,marginRight:14}}>{s.l}</span></React.Fragment>
         ))}
@@ -745,8 +895,9 @@ export default function App() {
         {selectedCo&&<SidePanel company={selectedCo} filings={filings} users={users} isAdmin={isAdmin} currentUserEmail={currentUser?.email} yearFilter={yearFilter} onClose={()=>setSelectedCo(null)} updateFiling={updateFiling} templates={templates} onUpdateTemplate={updateTemplate}/>}
       </div>
 
+      }
       {emailBlast&&<EmailBlastModal companies={companies} filings={filings} yearFilter={yearFilter} onClose={()=>setEmailBlast(false)}/>}
-      {yearMgr&&<YearManager companies={companies} filings={filings} setFilings={setFilings} yearFilter={yearFilter} setYearFilter={setYearFilter} onClose={()=>setYearMgr(false)} showToast={showToast} templates={templates}/>}
+      {yearMgr&&<YearManager companies={companies} filings={filings} setFilings={setFilings} yearFilter={yearFilter} setYearFilter={setYearFilter} onClose={()=>setYearMgr(false)} showToast={showToast} templates={templates} isOctavio={isOctavio}/>}
 
       {toast&&<div style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:toast.type==="error"?C.danger:C.success,color:"#fff",borderRadius:10,padding:"10px 18px",fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,0.4)"}}>{toast.msg}</div>}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box}select,input,textarea{color-scheme:dark}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}`}</style>
