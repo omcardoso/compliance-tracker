@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { SignedIn, SignedOut, SignIn, useUser, UserButton } from "@clerk/clerk-react";
-import { db, fbGetFilings, fbSaveFiling, fbDeleteFiling, fbDeleteYear, fbGetTemplates, fbSaveTemplate, fbGetSettings, fbSaveSettings } from "./firebase.js";
+import { db, fbGetFilings, fbSaveFiling, fbDeleteFiling, fbDeleteYear, fbGetTemplates, fbSaveTemplate, fbGetSettings, fbSaveSettings, fbLogEmail, fbGetEmailLogs } from "./firebase.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const SCRIPT_URL   = import.meta.env.VITE_SCRIPT_URL;
@@ -257,7 +257,7 @@ function ScopeModal({title,description,confirmLabel,onConfirm,onClose,filingType
 }
 
 // ─── Email Modal ──────────────────────────────────────────────────────────────
-function EmailModal({filing,company,onClose}) {
+function EmailModal({filing,company,onClose,currentUserEmail}) {
   const taxYr=String((filing.year||CURRENT_YEAR)-1);
   const tmpl=EMAIL_TEMPLATES[filing.filingType]||{};
   const vars={companyName:company.name||"",jurisdiction:company.jurisdiction||"",registrationNumber:company.registrationNumber||"",year:taxYr};
@@ -267,7 +267,7 @@ function EmailModal({filing,company,onClose}) {
   const [sending,setSending]=useState(false);
   const [sent,setSent]=useState(false);
   const inp={width:"100%",background:C.inputBg,border:"1px solid "+C.border2,borderRadius:7,color:C.text,padding:"7px 10px",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
-  const send=async()=>{if(!to.trim()){alert("Enter recipient email.");return;}setSending(true);try{await apiWrite({action:"sendComplianceEmail",to,subject,body});setSent(true);setTimeout(onClose,1800);}catch(e){alert("Error: "+e.message);}setSending(false);};
+  const send=async()=>{if(!to.trim()){alert("Enter recipient email.");return;}setSending(true);try{await apiWrite({action:"sendComplianceEmail",to,subject,body});await fbLogEmail({companyName:company.name,to,subject,filingType:filing.filingType,year:filing.year,sentBy:currentUserEmail||"",status:"Sent"});setSent(true);setTimeout(onClose,1800);}catch(e){alert("Error: "+e.message);}setSending(false);};
   return (
     <Modal title={"Send Email \u2014 "+filing.filingType} onClose={onClose} width={700}>
       {sent?<div style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:12}}>✓</div><p style={{fontSize:15,fontWeight:700,color:C.success}}>Email sent!</p></div>:(
@@ -668,9 +668,16 @@ function SidePanel({company,filings,users,isAdmin,currentUserEmail,yearFilter,on
   const [notes,setNotes]=useState("");
   const [notesSaved,setNotesSaved]=useState(false);
   const [savingNotes,setSavingNotes]=useState(false);
+  const [emailLogs,setEmailLogs]=useState([]);
+  const [loadingLogs,setLoadingLogs]=useState(false);
   const cos=(filings[company.name]||[]).filter(f=>String(f.year)===yearFilter);
   const taxYear=String(parseInt(yearFilter)-1);
-  useEffect(()=>{const nf=cos.find(f=>f.filingType==="__notes__");setNotes(nf?(nf.yearNotes||""):"");setNotesSaved(false);},[company.name,yearFilter]);
+  useEffect(()=>{
+    const nf=cos.find(f=>f.filingType==="__notes__");
+    setNotes(nf?(nf.yearNotes||""):"");setNotesSaved(false);
+    setLoadingLogs(true);
+    fbGetEmailLogs(company.name).then(logs=>{setEmailLogs(logs);setLoadingLogs(false);}).catch(()=>setLoadingLogs(false));
+  },[company.name,yearFilter]);
   const saveNotes=async()=>{setSavingNotes(true);const existing=cos.find(f=>f.filingType==="__notes__");const nr=existing?{...existing,yearNotes:notes}:{filingId:"notes_"+company.name.replace(/[^a-z0-9]/gi,"_")+"_"+yearFilter,companyName:company.name,jurisdiction:company.jurisdiction,filingType:"__notes__",year:parseInt(yearFilter),status:"N/A",dueDate:"",steps:[],yearNotes:notes};await fbSaveFiling(nr);updateFiling(company.name,nr);setNotesSaved(true);setTimeout(()=>setNotesSaved(false),2000);setSavingNotes(false);};
   const realFilings=cos.filter(f=>f.filingType!=="__notes__");
   return (
@@ -704,7 +711,33 @@ function SidePanel({company,filings,users,isAdmin,currentUserEmail,yearFilter,on
             onUpdateTemplate={onUpdateTemplate}/>
         ))}
       </div>
-      {emailFiling&&<EmailModal filing={emailFiling} company={company} onClose={()=>setEmailFiling(null)}/>}
+      {emailFiling&&<EmailModal filing={emailFiling} company={company} onClose={()=>setEmailFiling(null)} currentUserEmail={currentUserEmail}/>}
+
+      {/* Email History */}
+      <div style={{padding:"0 16px 16px"}}>
+        <div style={{fontSize:9,fontWeight:900,color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:10}}>Email History</div>
+        {loadingLogs ? (
+          <div style={{color:"#475569",fontSize:11}}>Loading...</div>
+        ) : emailLogs.length===0 ? (
+          <div style={{color:"#475569",fontSize:11,fontStyle:"italic"}}>No emails sent yet for this company.</div>
+        ) : emailLogs.map(log=>(
+          <div key={log.id} style={{background:"#222",borderRadius:8,padding:"9px 12px",
+            marginBottom:8,border:"1px solid #2d2d2d"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+              <span style={{fontSize:11,fontWeight:700,color:"#f1f5f9",flex:1}}>{log.filingType}</span>
+              <span style={{fontSize:10,fontWeight:800,borderRadius:20,padding:"1px 8px",
+                background:log.status==="Bounced"?"#450a0a":"#052e16",
+                color:log.status==="Bounced"?"#fca5a5":"#34d399"}}>
+                {log.status||"Sent"}
+              </span>
+            </div>
+            <div style={{fontSize:10,color:"#94a3b8"}}>To: {log.to}</div>
+            <div style={{fontSize:10,color:"#475569",marginTop:2}}>
+              {log.sentAt ? new Date(log.sentAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"2-digit",minute:"2-digit"}) : ""}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -926,6 +959,7 @@ function CommsPage({companies, filings, yearFilter, showToast, formUrl, emailTem
       const body    = fill(tmpl.body||"", vars);
       try {
         await apiWrite({action:"sendComplianceEmail", to:company.clientEmail, subject, body});
+        await fbLogEmail({companyName:company.name, to:company.clientEmail, subject, filingType:filing.filingType, year:filing.year, sentBy:"", status:"Sent"});
         // Mark step as Waiting Client
         const updStep = {...step, status:"Waiting Client"};
         const ns = (filing.steps||[]).map(s=>s.stepId===step.stepId?updStep:s);
