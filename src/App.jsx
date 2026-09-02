@@ -539,59 +539,135 @@ function FilingCard({filing,company,users,isAdmin,currentUserEmail,onUpdate,onEm
 }
 
 // ─── Year Manager ─────────────────────────────────────────────────────────────
-function YearManager({companies,filings,setFilings,yearFilter,setYearFilter,onClose,showToast,templates,isOctavio}) {
-  const [working,setWorking]=useState(false);
-  const [progress,setProgress]=useState("");
-  const [delYear,setDelYear]=useState("");
-  const [newYear,setNewYear]=useState(String(CURRENT_YEAR));
-  const years=[...new Set(Object.values(filings).flat().map(f=>String(f.year)).filter(Boolean))].sort().reverse();
-  const sel={background:C.inputBg,border:"1px solid "+C.border2,borderRadius:7,color:C.text,padding:"7px 10px",fontSize:13,outline:"none",width:"100%",marginBottom:10};
+function YearManager({companies,filings,setFilings,yearFilter,setYearFilter,onClose,showToast,templates,isOctavio,filingYears}) {
+  const [working,  setWorking]  = useState(false);
+  const [progress, setProgress] = useState("");
+  const [newYear,  setNewYear]  = useState(String(CURRENT_YEAR+1));
 
-  const initAll=async()=>{
-    setWorking(true);let created=0;
+  // Years that have filings, with counts
+  const yearsWithData = [...new Set(
+    Object.values(filings).flat()
+      .filter(f=>f.filingType!=="__notes__")
+      .map(f=>String(f.year))
+      .filter(Boolean)
+  )].sort((a,b)=>parseInt(b)-parseInt(a));
+
+  // Years available to initialize (not already having full filings)
+  const nextYears = [CURRENT_YEAR+2,CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1]
+    .map(String)
+    .filter(y=>!yearsWithData.includes(y));
+
+  const getFilingCount = (year) =>
+    Object.values(filings).flat().filter(f=>String(f.year)===year&&f.filingType!=="__notes__").length;
+
+  const initYear = async(year) => {
+    setWorking(true);
+    let created=0;
     for(const c of companies){
       const types=getFilingTypes(c.jurisdiction);
-      const existing=(filings[c.name]||[]).filter(f=>String(f.year)===newYear).map(f=>f.filingType);
+      const existing=(filings[c.name]||[]).filter(f=>String(f.year)===year).map(f=>f.filingType);
       const toCreate=types.filter(ft=>!existing.includes(ft));
       for(const ft of toCreate){
         const stepDefs=getStepsFromTemplates(ft,c.jurisdiction,templates);
-        const steps=stepDefs.map((s,i)=>{const n=typeof s==="string"?s:s.name;const a=(typeof s==="object"&&s.assignedTo)?s.assignedTo:getDefaultAssignment(n,ft,c.jurisdiction);return {stepId:uid(),stepName:n,assignedTo:a,status:"Pending",notes:"",completedAt:"",order:i};});
-        const f={filingId:uid(),companyName:c.name,jurisdiction:c.jurisdiction,filingType:ft,year:parseInt(newYear),status:"Not Started",dueDate:getDueDate(ft,parseInt(newYear)),steps,yearNotes:""};
+        const steps=stepDefs.map((s,i)=>{
+          const n=typeof s==="string"?s:s.name;
+          const a=(typeof s==="object"&&s.assignedTo)?s.assignedTo:getDefaultAssignment(n,ft,c.jurisdiction);
+          return {stepId:uid(),stepName:n,assignedTo:a,status:"Pending",notes:"",completedAt:"",order:i};
+        });
+        const f={filingId:uid(),companyName:c.name,jurisdiction:c.jurisdiction,filingType:ft,
+          year:parseInt(year),status:"Not Started",dueDate:getDueDate(ft,parseInt(year)),steps,yearNotes:""};
         await fbSaveFiling(f);created++;
         setProgress("Creating... "+created+" filings");
         setFilings(prev=>({...prev,[c.name]:[...(prev[c.name]||[]),f]}));
       }
     }
-    setYearFilter(newYear);setProgress("");showToast(created+" filings created for "+newYear);setWorking(false);
+    setYearFilter(year);
+    setProgress("");
+    showToast(created+" filings created for "+year);
+    setWorking(false);
   };
-  const deleteYear=async()=>{
-    if(!delYear||!window.confirm("Delete ALL filings for "+delYear+"?")) return;
+
+  const deleteYear = async(year) => {
+    if(!window.confirm("Delete ALL filings for "+year+"? This cannot be undone.")) return;
     setWorking(true);
-    await fbDeleteYear(delYear);
-    setFilings(prev=>{const n={};Object.entries(prev).forEach(([k,v])=>{n[k]=v.filter(f=>String(f.year)!==delYear);});return n;});
-    if(yearFilter===delYear) setYearFilter(String(CURRENT_YEAR));
-    showToast("All "+delYear+" filings deleted");setDelYear("");setWorking(false);
+    await fbDeleteYear(year);
+    setFilings(prev=>{const n={};Object.entries(prev).forEach(([k,v])=>{n[k]=v.filter(f=>String(f.year)!==year);});return n;});
+    if(yearFilter===year) setYearFilter(String(CURRENT_YEAR));
+    showToast("All "+year+" filings deleted");
+    setWorking(false);
   };
+
+  const sel = {background:"#1a1a1a",border:"1px solid #2d2d2d",borderRadius:7,color:C.text,
+    padding:"6px 10px",fontSize:13,outline:"none",colorScheme:"dark"};
+
   return (
-    <Modal title="Manage Filing Years" onClose={onClose} width={520}>
-      <div style={{background:C.card2,borderRadius:10,padding:16,marginBottom:16,border:"1px solid "+C.border}}>
-        <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:12}}>Initialize Year for All Companies</div>
-        <select value={newYear} onChange={e=>setNewYear(e.target.value)} style={sel}>
-          {[CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1,CURRENT_YEAR-2].map(y=><option key={y} value={y}>{y}</option>)}
-        </select>
-        <p style={{fontSize:11,color:C.text3,marginBottom:12,lineHeight:1.5}}>Creates all required filings for every company based on their jurisdiction. Uses your custom templates if saved.</p>
-        {progress&&<p style={{fontSize:11,color:C.accent,marginBottom:8}}>{progress}</p>}
-        <Btn onClick={initAll} disabled={working}>{working?<><Spinner size={13} color="#fff"/>Working...</>:"Create All Filings for "+newYear}</Btn>
+    <Modal title="Manage Filing Years" onClose={onClose} width={540}>
+      {/* Existing years */}
+      <div style={{background:C.card2,borderRadius:10,padding:16,marginBottom:14,border:"1px solid "+C.border}}>
+        <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:12}}>Filing Years</div>
+        {yearsWithData.length===0 && (
+          <div style={{fontSize:12,color:C.text3,fontStyle:"italic"}}>No filing years yet. Initialize one below.</div>
+        )}
+        {[...new Set([...yearsWithData, String(CURRENT_YEAR)])].sort((a,b)=>parseInt(b)-parseInt(a)).map(year=>{
+          const count = getFilingCount(year);
+          const isCurrent = year===yearFilter;
+          const hasData = yearsWithData.includes(year);
+          return (
+            <div key={year} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+              background:isCurrent?"#1e1b4b":"#111",borderRadius:8,marginBottom:8,
+              border:"1px solid "+(isCurrent?"#6366f1":"#2d2d2d")}}>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontWeight:900,fontSize:16,color:"#818cf8"}}>{year}</span>
+                  <span style={{fontSize:10,color:C.text3}}>→ Tax Year {parseInt(year)-1}</span>
+                  {isCurrent && <span style={{fontSize:9,fontWeight:900,background:"#6366f1",color:"#fff",borderRadius:20,padding:"1px 7px"}}>ACTIVE</span>}
+                </div>
+                <div style={{fontSize:10,color:C.text3,marginTop:2}}>
+                  {hasData ? count+" filings" : "Not yet initialized"}
+                </div>
+              </div>
+              {!isCurrent && (
+                <button onClick={()=>setYearFilter(year)}
+                  style={{background:"none",border:"1px solid "+C.border2,borderRadius:6,color:C.text2,
+                    cursor:"pointer",fontSize:10,fontWeight:700,padding:"3px 8px"}}>
+                  Switch
+                </button>
+              )}
+              {!hasData && (
+                <Btn size="sm" onClick={()=>initYear(year)} disabled={working}>
+                  {working&&progress?<><Spinner size={10} color="#fff"/>Working...</>:"Initialize"}
+                </Btn>
+              )}
+              {hasData && isOctavio && (
+                <button onClick={()=>deleteYear(year)} disabled={working}
+                  style={{background:"#450a0a",color:"#fca5a5",border:"none",borderRadius:6,
+                    cursor:working?"default":"pointer",fontSize:10,fontWeight:700,padding:"3px 8px",opacity:working?0.5:1}}>
+                  Delete
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {progress && <div style={{fontSize:11,color:C.accent,marginTop:8}}>{progress}</div>}
       </div>
-      {isOctavio&&<div style={{background:"#1a0a0a",borderRadius:10,padding:16,border:"1px solid #7f1d1d"}}>
-        <div style={{fontWeight:800,fontSize:13,color:"#fca5a5",marginBottom:12}}>Delete Entire Year</div>
-        <p style={{fontSize:11,color:"#f87171",marginBottom:10,lineHeight:1.5}}>Only years with existing filings appear here.</p>
-        <select value={delYear} onChange={e=>setDelYear(e.target.value)} style={{...sel,background:"#1a0a0a",borderColor:"#7f1d1d"}}>
-          <option value="">-- Select year --</option>
-          {years.map(y=><option key={y} value={y}>{y}</option>)}
-        </select>
-        <Btn variant="danger" onClick={deleteYear} disabled={!delYear||working}>Delete All {delYear||"..."} Filings</Btn>
-      </div>}
+
+      {/* Initialize future year */}
+      <div style={{background:"#111",borderRadius:10,padding:16,border:"1px solid "+C.border}}>
+        <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:4}}>Initialize a New Year</div>
+        <p style={{fontSize:11,color:C.text3,marginBottom:12,lineHeight:1.5}}>
+          Creates all required filings for every active company based on their jurisdiction.
+        </p>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <select value={newYear} onChange={e=>setNewYear(e.target.value)} style={sel}>
+            {[CURRENT_YEAR+3,CURRENT_YEAR+2,CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1].map(y=>(
+              <option key={y} value={y}>{y} (Tax Year {y-1})</option>
+            ))}
+          </select>
+          <Btn onClick={()=>initYear(newYear)} disabled={working}>
+            {working?<><Spinner size={13} color="#fff"/>Working...</>:"Create All Filings"}
+          </Btn>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -620,7 +696,7 @@ function EmailBlastModal({companies,filings,yearFilter,onClose}) {
     "Property Tax Information Received":                     "Comprovante de Imposto sobre Propriedade",
     "Received signed returns forms from client":             "Formularios de Declaracao de Renda Assinados",
     "Client submitted form":                                 "Formulario de Substancia Economica Preenchido",
-    "Balance sheet received from client":                    "Balanco Contabil",
+    "Balance sheet received from client":                    "Balanco Contabil\n  - Demonstrativo de Resultado do Exercicio (DRE)",
   };
   const getTmpl=g=>{
     // Use saved template from settings, fall back to defaults
@@ -1327,6 +1403,19 @@ export default function App() {
     setFilings(prev=>{const list=prev[companyName]||[];const exists=list.some(f=>f.filingId===updatedFiling.filingId);return{...prev,[companyName]:exists?list.map(f=>f.filingId===updatedFiling.filingId?updatedFiling:f):[...list,updatedFiling]};});
   };
 
+  // Dynamic year list — only years with actual filings + current + next year
+  const filingYears = [...new Set(
+    Object.values(filings).flat()
+      .filter(f=>f.filingType!=="__notes__")
+      .map(f=>String(f.year))
+      .filter(Boolean)
+  )];
+  const availableYears = [...new Set([
+    ...filingYears,
+    String(CURRENT_YEAR),
+    String(CURRENT_YEAR+1)
+  ])].sort((a,b)=>parseInt(b)-parseInt(a));
+
   const getWorstStatus=name=>{
     const cos=(filings[name]||[]).filter(f=>String(f.year)===yearFilter&&f.filingType!=="__notes__");
     if(!cos.length)return"No Filings";
@@ -1379,7 +1468,7 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <span style={{fontSize:11,color:C.text3}}>Work Year</span>
           <select value={yearFilter} onChange={e=>{setYearFilter(e.target.value);setSelectedCo(null);}} style={{background:"#111",color:C.text,border:"1px solid "+C.border2,borderRadius:7,padding:"4px 10px",fontSize:12,fontWeight:700,outline:"none",colorScheme:"dark"}}>
-            {[CURRENT_YEAR+1,CURRENT_YEAR,CURRENT_YEAR-1,CURRENT_YEAR-2].map(y=><option key={y} value={y}>{y}</option>)}
+            {availableYears.map(y=><option key={y} value={y}>{y}</option>)}
           </select>
           <span style={{fontSize:11,color:C.text3,background:C.card2,border:"1px solid "+C.border,borderRadius:6,padding:"3px 9px",whiteSpace:"nowrap"}}>Tax Year <span style={{color:"#818cf8",fontWeight:800}}>{taxYear}</span></span>
         </div>
@@ -1462,7 +1551,7 @@ export default function App() {
 
 
       {emailBlast&&<EmailBlastModal companies={companies} filings={filings} yearFilter={yearFilter} onClose={()=>setEmailBlast(false)}/>}
-      {yearMgr&&<YearManager companies={companies} filings={filings} setFilings={setFilings} yearFilter={yearFilter} setYearFilter={setYearFilter} onClose={()=>setYearMgr(false)} showToast={showToast} templates={templates} isOctavio={isOctavio}/>}
+      {yearMgr&&<YearManager companies={companies} filings={filings} setFilings={setFilings} yearFilter={yearFilter} setYearFilter={setYearFilter} onClose={()=>setYearMgr(false)} showToast={showToast} templates={templates} isOctavio={isOctavio} filingYears={filingYears}/>}
 
       {toast&&<div style={{position:"fixed",bottom:20,right:20,zIndex:9999,background:toast.type==="error"?C.danger:C.success,color:"#fff",borderRadius:10,padding:"10px 18px",fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,0.4)"}}>{toast.msg}</div>}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box}select,input,textarea{color-scheme:dark}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}`}</style>
