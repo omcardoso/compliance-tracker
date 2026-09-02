@@ -1355,6 +1355,7 @@ export default function App() {
   const [yearMgr,setYearMgr]=useState(false);
   const [emailBlast,setEmailBlast]=useState(false);
   const [sortBy,setSortBy]=useState("name");
+  const [syncing,setSyncing]=useState(false);
   const [sortDir,setSortDir]=useState("asc");
   const [view,setView]=useState("dashboard");
   const [settings,setSettings]=useState({formUrl:""});
@@ -1365,6 +1366,16 @@ export default function App() {
   const taxYear=String(parseInt(yearFilter)-1);
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
   const updateTemplate=(key,steps)=>{setTemplates(prev=>({...prev,[key]:steps}));};
+  const syncCompanies=async()=>{
+    setSyncing(true);
+    try {
+      const cd=await apiRead("getCompanies");
+      setCompanies(cd.companies||[]);
+      showToast("Companies synced from sheet");
+    } catch(e){ showToast("Sync failed: "+e.message,"error"); }
+    setSyncing(false);
+  };
+
   const sortCol=col=>{if(sortBy===col)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortBy(col);setSortDir("asc");}};
   const sortIcon=col=>sortBy===col?(sortDir==="asc"?" ▲":" ▼"):" ↕";
 
@@ -1474,6 +1485,12 @@ export default function App() {
         </div>
         {isAdmin&&<><Btn size="sm" variant="secondary" onClick={()=>setYearMgr(true)}>🗓 Manage Years</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="reports"?"dashboard":"reports")} style={{color:"#38bdf8",borderColor:"#0c4a6e"}}>📊 Reports</Btn><Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="comms"?"dashboard":"comms")} style={{color:"#34d399",borderColor:"#064e3b"}}>✉ Comms</Btn>{isOctavio&&<Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="users"?"dashboard":"users")} style={{color:"#a78bfa",borderColor:"#3b0764"}}>👥 Users</Btn>}
             <Btn size="sm" variant="secondary" onClick={()=>setView(v=>v==="settings"?"dashboard":"settings")} style={{color:"#f59e0b",borderColor:"#78350f"}}>⚙ Settings</Btn></>}
+        <button onClick={syncCompanies} disabled={syncing} title="Sync companies from Google Sheet"
+          style={{background:"none",border:"1px solid "+C.border2,borderRadius:7,cursor:syncing?"default":"pointer",
+            color:syncing?C.text3:C.text2,padding:"4px 8px",fontSize:14,opacity:syncing?0.5:1,
+            display:"flex",alignItems:"center",gap:4}}>
+          {syncing?<Spinner size={13} color={C.text2}/>:"🔄"}
+        </button>
         <UserButton/>
       </div>
 
